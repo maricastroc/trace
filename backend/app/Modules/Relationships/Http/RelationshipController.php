@@ -15,9 +15,7 @@ use Illuminate\Http\Request;
 
 final class RelationshipController
 {
-    public function __construct(private readonly RelationshipService $service)
-    {
-    }
+    public function __construct(private readonly RelationshipService $service) {}
 
     public function index(Workspace $workspace): JsonResponse
     {

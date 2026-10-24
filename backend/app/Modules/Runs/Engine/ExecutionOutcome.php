@@ -10,6 +10,5 @@ final class ExecutionOutcome
         public readonly array $steps,
         public readonly array $results,
         public readonly array $columns,
-    ) {
-    }
+    ) {}
 }

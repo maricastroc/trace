@@ -16,9 +16,7 @@ class ExecuteRun implements ShouldQueue
 
     public int $timeout = 600;
 
-    public function __construct(public readonly string $runId)
-    {
-    }
+    public function __construct(public readonly string $runId) {}
 
     public function handle(RunExecutor $executor): void
     {

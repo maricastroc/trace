@@ -1,0 +1,109 @@
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Tests\TestCase;
+
+class ImportTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_upload_persists_version_columns_rows_and_original_file(): void
+    {
+        [, $token] = $this->workspace(false);
+        $csv = "id;municipio;quantidade\n0001;Fortaleza;10\n0002;Caucaia;\n";
+
+        $dataset = $this->upload($token, 'Entregas 2026.csv', $csv)->assertCreated()->json('data');
+
+        $this->assertSame('entregas_2026', $dataset['key']);
+        $this->assertSame(1, $dataset['latest_version']['number']);
+        $this->assertSame(['identifier', 'text', 'number'], array_column($dataset['columns'], 'type'));
+
+        $version = $this->api($token, 'GET', "dataset-versions/{$dataset['latest_version']['id']}")->assertOk()->json('data');
+        $this->assertSame(';', $version['delimiter']);
+        $this->assertSame(hash('sha256', $csv), $version['checksum']);
+
+        $rows = $this->api($token, 'GET', "dataset-versions/{$version['id']}/rows")->assertOk()->json('data');
+        $this->assertSame(['id' => '0001', 'municipio' => 'Fortaleza', 'quantidade' => '10'], $rows[0]['values']);
+        $this->assertNull($rows[1]['values']['quantidade']);
+        $this->assertSame([2, 3], array_column($rows, 'line_number'));
+
+        $path = DB::table('dataset_versions')->where('id', $version['id'])->value('source_path');
+        $this->assertSame($csv, Storage::disk('local')->get($path));
+    }
+
+    public function test_new_version_keeps_previous_version_intact_and_reports_changes(): void
+    {
+        [, $token] = $this->workspace(false);
+        $first = $this->upload($token, 'a.csv', "id,valor\n1,10\n2,20\n")->json('data');
+
+        $second = $this->upload($token, 'a-v2.csv', "id,valor,obs\n1,15\n", $first['id'])->assertStatus(422)->json();
+        $this->assertSame('csv.ragged_rows', $second['code']);
+
+        $second = $this->upload($token, 'a-v2.csv', "id,valor,obs\n1,15,ok\n", $first['id'])->assertCreated()->json('data');
+
+        $this->assertSame([2, 1], array_column($second['versions'], 'number'));
+        $latest = $this->api($token, 'GET', "dataset-versions/{$second['latest_version']['id']}")->json('data');
+        $this->assertSame(['obs'], $latest['import_report']['columns_added']);
+        $this->assertSame(-1, $latest['import_report']['row_delta']);
+
+        $old = $this->api($token, 'GET', "dataset-versions/{$first['latest_version']['id']}/rows")->json('data');
+        $this->assertSame(['10', '20'], array_column(array_column($old, 'values'), 'valor'));
+    }
+
+    public function test_invalid_files_return_clear_errors_and_persist_nothing(): void
+    {
+        [, $token] = $this->workspace(false);
+
+        $this->upload($token, 'dup.csv', "id,ID\n1,2\n")->assertStatus(422)->assertJsonPath('code', 'csv.duplicate_header');
+        $this->upload($token, 'vazio.csv', "id,nome\n")->assertStatus(422)->assertJsonPath('code', 'csv.no_rows');
+        $this->upload($token, 'planilha.xlsx', "id\n1\n")->assertStatus(422)->assertJsonValidationErrors('file');
+        $this->withHeaders(['X-Trace-Workspace' => $token, 'Accept' => 'application/json'])
+            ->post('/api/v1/datasets', [])->assertStatus(422)->assertJsonValidationErrors('file');
+
+        config(['trace.limits.rows' => 2]);
+        $this->upload($token, 'grande.csv', "id\n1\n2\n3\n")->assertStatus(422)->assertJsonPath('code', 'csv.too_many_rows');
+
+        $this->assertSame(0, DB::table('datasets')->count());
+        $this->assertSame(0, DB::table('source_rows')->count());
+    }
+
+    public function test_preview_does_not_persist(): void
+    {
+        [, $token] = $this->workspace(false);
+        $file = UploadedFile::fake()->createWithContent('x.csv', "id,v\n01,1\n02,2\n");
+
+        $preview = $this->withHeaders(['X-Trace-Workspace' => $token, 'Accept' => 'application/json'])
+            ->post('/api/v1/imports/preview', ['file' => $file])->assertOk()->json('data');
+
+        $this->assertSame(2, $preview['row_count']);
+        $this->assertSame('01', $preview['rows'][0]['values']['id']);
+        $this->assertSame(0, DB::table('datasets')->count());
+    }
+
+    public function test_uploads_can_be_disabled_for_public_demo(): void
+    {
+        [, $token] = $this->workspace(false);
+        config(['trace.uploads_enabled' => false]);
+
+        $this->upload($token, 'a.csv', "id\n1\n")->assertStatus(403)->assertJsonPath('code', 'uploads.disabled');
+        $this->getJson('/api/v1/meta')->assertJsonPath('data.uploads_enabled', false);
+    }
+
+    public function test_dataset_used_by_a_run_cannot_be_deleted_but_unused_one_can(): void
+    {
+        [, $token] = $this->workspace();
+        $this->runDemo($token);
+        $ids = $this->demoIds($token);
+
+        $this->api($token, 'DELETE', "datasets/{$ids['cozinhas']['id']}")->assertStatus(409)->assertJsonPath('code', 'dataset.in_use');
+
+        $extra = $this->upload($token, 'extra.csv', "id\n1\n")->json('data');
+        $this->api($token, 'DELETE', "datasets/{$extra['id']}")->assertNoContent();
+        $this->api($token, 'GET', "datasets/{$extra['id']}")->assertNotFound();
+    }
+}

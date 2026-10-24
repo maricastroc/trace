@@ -7,9 +7,7 @@ use Illuminate\Support\Str;
 
 final class WorkspaceProvisioner
 {
-    public function __construct(private readonly DemoInstaller $demo)
-    {
-    }
+    public function __construct(private readonly DemoInstaller $demo) {}
 
     public function create(bool $withDemo = true): array
     {

@@ -201,9 +201,13 @@ final class RunLineage
 
                 $recomputed = $check->total === null ? null : ValueParser::number($check->total);
                 $ignored = (int) $check->nulls + (int) $check->unconvertible;
-                $statement = "Soma de {$source['alias']}.{$source['column']} em {$check->counted} registros";
+                $statement = "Soma de {$source['alias']}.{$source['column']} em ".self::count((int) $check->counted, 'registro', 'registros');
                 if ($ignored > 0) {
-                    $statement .= " ({$check->nulls} vazios e {$check->unconvertible} não numéricos foram ignorados)";
+                    $parts = array_filter([
+                        (int) $check->nulls > 0 ? self::count((int) $check->nulls, 'vazio', 'vazios') : null,
+                        (int) $check->unconvertible > 0 ? self::count((int) $check->unconvertible, 'não numérico', 'não numéricos') : null,
+                    ]);
+                    $statement .= '; '.implode(' e ', $parts).' '.($ignored === 1 ? 'foi ignorado' : 'foram ignorados');
                 }
 
                 $dependencies[] = [
@@ -500,7 +504,7 @@ final class RunLineage
 
     public function exclusions(Run $run, array $filters, Pagination $page): array
     {
-        $where = ["t.run_id = ?", "t.fate = 'excluded'"];
+        $where = ['t.run_id = ?', "t.fate = 'excluded'"];
         $bindings = [$run->id];
 
         if (isset($filters['step'])) {
@@ -685,6 +689,11 @@ final class RunLineage
             fn (object $row) => DatasetPresenter::row($row) + ['alias' => $alias, 'input' => $input['position']],
             $query->orderBy('row_number')->limit(20)->get(['id', 'row_number', 'line_number', 'values'])->all(),
         );
+    }
+
+    private static function count(int $count, string $singular, string $plural): string
+    {
+        return $count === 1 ? "1 {$singular}" : "{$count} {$plural}";
     }
 
     private function assertInput(Run $run, int $input): void

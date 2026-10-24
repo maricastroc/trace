@@ -9,8 +9,7 @@ final class CompiledRecipe
         public readonly array $inputs,
         public readonly array $steps,
         public readonly array $issues,
-    ) {
-    }
+    ) {}
 
     public function errors(): array
     {

@@ -15,9 +15,7 @@ use Illuminate\Support\Facades\Storage;
 
 final class DatasetController
 {
-    public function __construct(private readonly CsvImporter $importer)
-    {
-    }
+    public function __construct(private readonly CsvImporter $importer) {}
 
     public function index(Workspace $workspace): JsonResponse
     {

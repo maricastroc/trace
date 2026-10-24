@@ -20,6 +20,7 @@ return new class extends Migration
             $table->jsonb('output_columns')->nullable();
             $table->unsignedInteger('result_count')->nullable();
             $table->unsignedInteger('tuple_count')->nullable();
+            $table->unsignedInteger('duration_ms')->nullable();
             $table->timestamp('queued_at');
             $table->timestamp('started_at')->nullable();
             $table->timestamp('finished_at')->nullable();

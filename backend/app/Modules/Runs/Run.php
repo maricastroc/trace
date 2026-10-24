@@ -21,7 +21,7 @@ class Run extends Model
 
     protected $fillable = [
         'workspace_id', 'recipe_id', 'recipe_revision', 'recipe_snapshot', 'status', 'error', 'output_columns',
-        'result_count', 'tuple_count', 'queued_at', 'started_at', 'finished_at',
+        'result_count', 'tuple_count', 'duration_ms', 'queued_at', 'started_at', 'finished_at',
     ];
 
     protected function casts(): array

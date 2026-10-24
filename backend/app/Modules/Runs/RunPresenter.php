@@ -6,10 +6,6 @@ final class RunPresenter
 {
     public static function summary(Run $run): array
     {
-        $duration = $run->started_at && $run->finished_at
-            ? (int) $run->started_at->diffInMilliseconds($run->finished_at)
-            : null;
-
         return [
             'id' => $run->id,
             'status' => $run->status,
@@ -22,7 +18,7 @@ final class RunPresenter
             'queued_at' => $run->queued_at?->toIso8601String(),
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),
-            'duration_ms' => $duration,
+            'duration_ms' => $run->duration_ms,
         ];
     }
 

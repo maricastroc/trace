@@ -12,8 +12,7 @@ final class RunExecutor
     public function __construct(
         private readonly Pipeline $pipeline,
         private readonly LineageWriter $writer,
-    ) {
-    }
+    ) {}
 
     public function execute(Run $run): void
     {
@@ -29,9 +28,11 @@ final class RunExecutor
         $run->refresh();
         ini_set('memory_limit', '1024M');
 
+        $startedAt = hrtime(true);
+
         try {
             $outcome = $this->pipeline->execute($run->recipe_snapshot);
-            $this->writer->write($run, $outcome);
+            $this->writer->write($run, $outcome, $startedAt);
         } catch (ExecutionFailed $failure) {
             $this->fail($run, $failure->toArray());
         } catch (Throwable $exception) {

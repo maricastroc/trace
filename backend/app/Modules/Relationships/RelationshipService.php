@@ -13,9 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 final class RelationshipService
 {
-    public function __construct(private readonly RelationshipAnalyzer $analyzer)
-    {
-    }
+    public function __construct(private readonly RelationshipAnalyzer $analyzer) {}
 
     public function currentEvidence(Relationship $relationship): array
     {

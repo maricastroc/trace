@@ -9,9 +9,9 @@ final class LineageWriter
 {
     private const CHUNK = 2000;
 
-    public function write(Run $run, ExecutionOutcome $outcome): void
+    public function write(Run $run, ExecutionOutcome $outcome, int $startedAt): void
     {
-        DB::transaction(function () use ($run, $outcome) {
+        DB::transaction(function () use ($run, $outcome, $startedAt) {
             $this->insert('run_steps', array_map(fn (array $step) => [
                 'run_id' => $run->id,
                 'position' => $step['position'],
@@ -48,6 +48,7 @@ final class LineageWriter
                 'output_columns' => $outcome->columns,
                 'result_count' => count($outcome->results),
                 'tuple_count' => $outcome->tuples->count(),
+                'duration_ms' => (int) round((hrtime(true) - $startedAt) / 1e6),
                 'finished_at' => now(),
                 'error' => null,
             ])->save();

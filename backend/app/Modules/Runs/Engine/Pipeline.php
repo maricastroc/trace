@@ -11,8 +11,7 @@ final class Pipeline
         private readonly JoinOperator $join,
         private readonly AggregateOperator $aggregate,
         private readonly ProjectOperator $project,
-    ) {
-    }
+    ) {}
 
     public function execute(array $snapshot, ?int $maxTuples = null): ExecutionOutcome
     {

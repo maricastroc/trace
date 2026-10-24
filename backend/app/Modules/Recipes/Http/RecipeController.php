@@ -7,6 +7,7 @@ use App\Modules\Recipes\Recipe;
 use App\Modules\Recipes\RecipeCompiler;
 use App\Modules\Runs\Run;
 use App\Modules\Runs\RunPresenter;
+use App\Modules\Support\Canonical;
 use App\Modules\Support\DomainError;
 use App\Modules\Workspaces\Workspace;
 use Illuminate\Http\JsonResponse;
@@ -14,9 +15,7 @@ use Illuminate\Http\Request;
 
 final class RecipeController
 {
-    public function __construct(private readonly RecipeCompiler $compiler)
-    {
-    }
+    public function __construct(private readonly RecipeCompiler $compiler) {}
 
     public function index(Workspace $workspace): JsonResponse
     {
@@ -62,7 +61,7 @@ final class RecipeController
         $compiled = $this->compileOrFail($workspace, $data['base_dataset_id'], $data['steps'] ?? []);
         $steps = $compiled->storableSteps();
 
-        $changed = $steps !== $model->steps || $compiled->baseDatasetId !== $model->base_dataset_id;
+        $changed = ! Canonical::same($steps, $model->steps) || $compiled->baseDatasetId !== $model->base_dataset_id;
 
         $model->fill([
             'name' => $data['name'],

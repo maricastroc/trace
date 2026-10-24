@@ -13,8 +13,7 @@ final class ParsedCsv
         public readonly array $warnings,
         public readonly string $checksum,
         public readonly int $sizeBytes,
-    ) {
-    }
+    ) {}
 
     public function rowCount(): int
     {

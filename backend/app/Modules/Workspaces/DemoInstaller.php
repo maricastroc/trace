@@ -16,8 +16,7 @@ final class DemoInstaller
         private readonly CsvImporter $importer,
         private readonly RelationshipDiscovery $discovery,
         private readonly RecipeCompiler $compiler,
-    ) {
-    }
+    ) {}
 
     public function install(Workspace $workspace): void
     {

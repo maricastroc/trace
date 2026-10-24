@@ -11,9 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 final class CsvImporter
 {
-    public function __construct(private readonly ColumnProfiler $profiler)
-    {
-    }
+    public function __construct(private readonly ColumnProfiler $profiler) {}
 
     public function preview(string $path, string $filename): array
     {

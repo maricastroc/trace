@@ -7,16 +7,18 @@ use App\Modules\Recipes\StepDescriber;
 use App\Modules\Runs\Engine\TupleStore;
 use App\Modules\Runs\Run;
 use App\Modules\Support\DomainError;
+use App\Modules\Support\Pagination;
 use Illuminate\Support\Facades\DB;
 
 final class RowJourney
 {
-    public function __construct(private readonly RunLineage $lineage)
-    {
-    }
+    public function __construct(private readonly RunLineage $lineage) {}
 
-    public function trace(Run $run, int $sourceRowId): array
+    private const DIAGNOSTICS_LIMIT = 50;
+
+    public function trace(Run $run, int $sourceRowId, ?Pagination $page = null): array
     {
+        $page ??= new Pagination(1, 20);
         $row = DB::selectOne('SELECT id, dataset_version_id, row_number, line_number, "values" FROM source_rows WHERE id = ?', [$sourceRowId]);
         $input = $row ? $this->inputForVersion($run, $row->dataset_version_id) : null;
 
@@ -32,17 +34,21 @@ final class RowJourney
             'version_number' => $input['version_number'],
         ];
 
-        $containing = DB::select(
-            'SELECT t.tuple_no FROM run_tuple_sources s JOIN run_tuples t ON t.run_id = s.run_id AND t.tuple_no = s.tuple_no
-             WHERE s.run_id = ? AND s.source_row_id = ? AND s.input_position = ? ORDER BY t.tuple_no',
-            [$run->id, $sourceRowId, $input['position']],
-        );
-        $tupleNos = array_map(fn (object $t) => (int) $t->tuple_no, $containing);
+        $leafScope = "FROM run_tuple_sources s JOIN run_tuples t ON t.run_id = s.run_id AND t.tuple_no = s.tuple_no
+            WHERE s.run_id = ? AND s.source_row_id = ? AND s.input_position = ? AND t.fate <> 'expanded'";
+        $scopeBindings = [$run->id, $sourceRowId, $input['position']];
 
-        $tuples = $this->withAncestors($run, $tupleNos);
-        $leaves = array_values(array_filter($tupleNos, fn (int $no) => $tuples[$no]->fate !== TupleStore::EXPANDED));
+        $outcomes = $this->outcomes($run, $leafScope, $scopeBindings);
+        $totalPaths = array_sum(array_column($outcomes, 'count'));
+
+        $leaves = array_map(fn (object $t) => (int) $t->tuple_no, DB::select(
+            "SELECT t.tuple_no {$leafScope} ORDER BY t.tuple_no LIMIT ? OFFSET ?",
+            [...$scopeBindings, $page->perPage, $page->offset()],
+        ));
+
+        $tuples = $this->withAncestors($run, $leaves);
         $sources = $this->lineage->sourcesFor($run, array_keys($tuples));
-        $diagnostics = $this->diagnosticsFor($run, $sourceRowId);
+        [$diagnostics, $diagnosticsTotal] = $this->diagnosticsFor($run, $sourceRowId);
         $results = $this->resultsFor($run, array_filter(array_map(fn (int $no) => $tuples[$no]->result_no, $leaves)));
 
         $paths = array_map(
@@ -50,16 +56,54 @@ final class RowJourney
             $leaves,
         );
 
-        $references = $tupleNos === [] ? $this->references($run, $steps, $input, $subject['values']) : null;
+        $references = $totalPaths === 0 ? $this->references($run, $steps, $input, $subject['values']) : null;
 
         return [
             'row' => $subject,
             'steps' => array_map(fn (array $s) => ['position' => $s['position'], 'type' => $s['type'], 'title' => $s['title'], 'summary' => $s['summary']], $steps),
+            'outcomes' => $outcomes,
             'paths' => $paths,
+            'paths_meta' => $page->meta($totalPaths),
             'diagnostics' => $diagnostics,
+            'diagnostics_total' => $diagnosticsTotal,
             'references' => $references,
-            'summary' => $this->summary($paths, $references, $diagnostics, $input),
+            'summary' => $this->summary($outcomes, $totalPaths, $references, $diagnostics, $input),
         ];
+    }
+
+    private function outcomes(Run $run, string $leafScope, array $bindings): array
+    {
+        $groups = DB::select(
+            "SELECT t.fate, t.end_step, t.exclusion_code, t.result_no, count(*) AS n, min(t.tuple_no) AS sample,
+                count(DISTINCT (t.exclusion_detail - 'source_row_id')) AS variants
+             {$leafScope} GROUP BY t.fate, t.end_step, t.exclusion_code, t.result_no
+             ORDER BY t.fate DESC, t.result_no, t.end_step, t.exclusion_code",
+            $bindings,
+        );
+        $titles = collect($run->steps())->pluck('title', 'position');
+
+        $outcomes = [];
+        foreach ($groups as $group) {
+            if ($group->fate === TupleStore::INCLUDED) {
+                $outcomes[] = ['status' => 'included', 'result_no' => (int) $group->result_no, 'count' => (int) $group->n];
+
+                continue;
+            }
+
+            $detail = json_decode((string) DB::table('run_tuples')->where('run_id', $run->id)->where('tuple_no', $group->sample)->value('exclusion_detail'), true) ?? [];
+            $outcomes[] = [
+                'status' => 'excluded',
+                'step_position' => (int) $group->end_step,
+                'step_title' => $titles[(int) $group->end_step] ?? null,
+                'code' => $group->exclusion_code,
+                'label' => Explainer::codeLabel($group->exclusion_code),
+                'count' => (int) $group->n,
+                'uniform' => (int) $group->variants <= 1,
+                'explanation' => Explainer::exclusion($group->exclusion_code, $detail),
+            ];
+        }
+
+        return $outcomes;
     }
 
     private function withAncestors(Run $run, array $tupleNos): array
@@ -148,8 +192,7 @@ final class RowJourney
                 if ($subjectIsLookup) {
                     $subjectJoinedAt = $p;
                 }
-                $timeline[] = $entry + [
-                    'subject_present' => true,
+                $timeline[] = ['subject_present' => true] + $entry + [
                     'status' => 'joined',
                     'explanation' => "Relacionado por {$step['probe']['alias']}.{$step['probe']['column']} = {$step['lookup']['alias']}.{$step['lookup']['column']}.",
                     'partner' => $this->sourceAt($sources, (int) $next->tuple_no, $partnerInput),
@@ -221,22 +264,21 @@ final class RowJourney
                 ];
             }
 
-            $referencing = DB::select(
-                'SELECT id FROM source_rows WHERE dataset_version_id = ? AND "values" @> jsonb_build_object(?::text, ?::text)',
+            $count = (int) DB::selectOne(
+                'SELECT count(*) AS n FROM source_rows WHERE dataset_version_id = ? AND "values" @> jsonb_build_object(?::text, ?::text)',
                 [$probeInput['version_id'], $step['probe']['column'], $key],
-            );
-            $ids = array_map(fn (object $r) => (int) $r->id, $referencing);
+            )->n;
 
             $excludedBefore = [];
             $reached = 0;
-            if ($ids !== []) {
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            if ($count > 0) {
                 $fates = DB::select(
-                    "SELECT t.end_step, t.exclusion_code, t.fate, t.born_step, count(*) AS n FROM run_tuple_sources s
+                    'SELECT t.end_step, t.exclusion_code, t.fate, t.born_step, count(*) AS n FROM run_tuple_sources s
                      JOIN run_tuples t ON t.run_id = s.run_id AND t.tuple_no = s.tuple_no
-                     WHERE s.run_id = ? AND s.input_position = ? AND s.source_row_id IN ({$placeholders})
-                     GROUP BY t.end_step, t.exclusion_code, t.fate, t.born_step",
-                    [$run->id, $step['probe']['input'], ...$ids],
+                     JOIN source_rows r ON r.id = s.source_row_id
+                     WHERE s.run_id = ? AND s.input_position = ? AND r."values" @> jsonb_build_object(?::text, ?::text)
+                     GROUP BY t.end_step, t.exclusion_code, t.fate, t.born_step',
+                    [$run->id, $step['probe']['input'], $step['probe']['column'], $key],
                 );
                 $titles = collect($steps)->pluck('title', 'position');
                 foreach ($fates as $fate) {
@@ -255,11 +297,10 @@ final class RowJourney
                 }
             }
 
-            $count = count($ids);
             $explanation = $count === 0
                 ? "Nenhum registro de {$probeInput['alias']} tem {$step['probe']['column']} = \"{$key}\"."
                 : ($reached === 0
-                    ? "{$count} ".($count === 1 ? 'registro' : 'registros')." de {$probeInput['alias']} ".($count === 1 ? 'referencia' : 'referenciam')." este registro, mas ".($count === 1 ? 'foi excluído' : 'todos foram excluídos').' antes da junção.'
+                    ? "{$count} ".($count === 1 ? 'registro' : 'registros')." de {$probeInput['alias']} ".($count === 1 ? 'referencia' : 'referenciam').' este registro, mas '.($count === 1 ? 'foi excluído' : 'todos foram excluídos').' antes da junção.'
                     : "{$count} registros de {$probeInput['alias']} referenciam este registro.");
 
             return [
@@ -279,8 +320,9 @@ final class RowJourney
     private function diagnosticsFor(Run $run, int $sourceRowId): array
     {
         $titles = collect($run->steps())->pluck('title', 'position');
+        $total = (int) DB::selectOne('SELECT count(*) AS n FROM run_diagnostics WHERE run_id = ? AND source_row_id = ?', [$run->id, $sourceRowId])->n;
 
-        return array_map(function (object $row) use ($titles) {
+        $items = array_map(function (object $row) use ($titles) {
             $detail = json_decode($row->detail, true);
 
             return [
@@ -294,9 +336,11 @@ final class RowJourney
                 'detail' => $detail,
             ];
         }, DB::select(
-            'SELECT step_position, code, severity, tuple_no, detail FROM run_diagnostics WHERE run_id = ? AND source_row_id = ? ORDER BY step_position, id',
-            [$run->id, $sourceRowId],
+            'SELECT step_position, code, severity, tuple_no, detail FROM run_diagnostics WHERE run_id = ? AND source_row_id = ? ORDER BY step_position, id LIMIT ?',
+            [$run->id, $sourceRowId, self::DIAGNOSTICS_LIMIT],
         ));
+
+        return [$items, $total];
     }
 
     private function resultsFor(Run $run, array $resultNos): array
@@ -314,9 +358,9 @@ final class RowJourney
         ))->mapWithKeys(fn (object $row) => [(int) $row->result_no => json_decode($row->values, true)])->all();
     }
 
-    private function summary(array $paths, ?array $references, array $diagnostics, array $input): string
+    private function summary(array $outcomes, int $total, ?array $references, array $diagnostics, array $input): string
     {
-        if ($paths === []) {
+        if ($total === 0) {
             $notJoined = collect($diagnostics)->firstWhere('code', 'join.right_unmatched')
                 ?? collect($diagnostics)->firstWhere('code', 'join.lookup_null_key');
 
@@ -327,18 +371,31 @@ final class RowJourney
             return $notJoined['explanation'] ?? 'Este registro não participou desta execução.';
         }
 
-        $included = array_filter($paths, fn (array $path) => ($path['outcome']['status'] ?? null) === 'included');
-        $excluded = array_filter($paths, fn (array $path) => ($path['outcome']['status'] ?? null) === 'excluded');
+        $included = array_values(array_filter($outcomes, fn (array $o) => $o['status'] === 'included'));
+        $excluded = array_values(array_filter($outcomes, fn (array $o) => $o['status'] === 'excluded'));
+        $includedCount = array_sum(array_column($included, 'count'));
+        $excludedCount = array_sum(array_column($excluded, 'count'));
 
-        if (count($paths) === 1) {
-            $outcome = $paths[0]['outcome'];
+        if ($total === 1) {
+            $outcome = $outcomes[0];
 
             return $outcome['status'] === 'included'
                 ? "Contribuiu para a linha {$outcome['result_no']} do resultado."
                 : "Excluído no passo {$outcome['step_position']} ({$outcome['step_title']}). {$outcome['explanation']}";
         }
 
-        return 'Este registro aparece em '.count($paths).' combinações: '.count($included).' chegaram ao resultado e '.count($excluded).' foram excluídas.';
+        if ($includedCount === 0 && count($excluded) === 1) {
+            $outcome = $excluded[0];
+            $why = $outcome['uniform'] ? $outcome['explanation'] : 'Exemplo: '.$outcome['explanation'];
+
+            return "Participou de {$total} combinações, todas excluídas no passo {$outcome['step_position']} ({$outcome['step_title']}). {$why}";
+        }
+
+        $resultNos = array_column($included, 'result_no');
+        $text = "Participou de {$total} combinações: {$includedCount} chegaram ao resultado";
+        $text .= $resultNos === [] ? '' : ' (linha '.implode(', ', $resultNos).')';
+
+        return $text.($excludedCount > 0 ? " e {$excludedCount} foram excluídas." : '.');
     }
 
     private function hasInput(array $sources, ?object $tuple, int $input): bool
@@ -380,8 +437,10 @@ final class RowJourney
 
     private function notInRun(Run $run, ?object $row): DomainError
     {
+        $notFound = new DomainError('row.not_in_run', 'Registro não encontrado entre as entradas desta execução.', 404);
+
         if ($row === null) {
-            return new DomainError('row.not_found', 'Registro não encontrado.', 404);
+            return $notFound;
         }
 
         $datasetId = DB::table('dataset_versions')->where('id', $row->dataset_version_id)->value('dataset_id');
@@ -393,6 +452,6 @@ final class RowJourney
             }
         }
 
-        return new DomainError('row.not_in_run', 'Este registro pertence a um conjunto que não participa desta execução.', 404);
+        return $notFound;
     }
 }

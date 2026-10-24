@@ -7,9 +7,7 @@ use App\Modules\Datasets\DatasetVersion;
 
 final class RelationshipAnalyzer
 {
-    public function __construct(private readonly ColumnValueIndex $index)
-    {
-    }
+    public function __construct(private readonly ColumnValueIndex $index) {}
 
     public function evaluate(DatasetVersion $fromVersion, DatasetColumn $fromColumn, DatasetVersion $toVersion, DatasetColumn $toColumn): array
     {

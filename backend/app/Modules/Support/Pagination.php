@@ -6,9 +6,7 @@ use Illuminate\Http\Request;
 
 final class Pagination
 {
-    public function __construct(public readonly int $page, public readonly int $perPage)
-    {
-    }
+    public function __construct(public readonly int $page, public readonly int $perPage) {}
 
     public static function fromRequest(Request $request, int $default = 25, int $max = 100): self
     {

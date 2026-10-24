@@ -11,9 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 final class RunLauncher
 {
-    public function __construct(private readonly RecipeCompiler $compiler)
-    {
-    }
+    public function __construct(private readonly RecipeCompiler $compiler) {}
 
     public function launch(Workspace $workspace, Recipe $recipe): Run
     {

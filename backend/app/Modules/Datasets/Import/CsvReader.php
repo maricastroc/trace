@@ -12,8 +12,7 @@ final class CsvReader
         private readonly int $maxRows,
         private readonly int $maxColumns,
         private readonly int $maxBytes,
-    ) {
-    }
+    ) {}
 
     public static function fromConfig(): self
     {
@@ -82,6 +81,7 @@ final class CsvReader
 
             if ($labels === null) {
                 $labels = $this->validateHeader($fields);
+
                 continue;
             }
 
@@ -90,6 +90,7 @@ final class CsvReader
                     $raggedLines[] = ['line' => $startLine, 'expected' => count($labels), 'found' => count($fields)];
                 }
                 $raggedTotal++;
+
                 continue;
             }
 

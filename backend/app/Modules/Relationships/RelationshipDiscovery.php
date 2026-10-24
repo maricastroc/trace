@@ -12,9 +12,7 @@ final class RelationshipDiscovery
 {
     private const MIN_SCORE = 0.6;
 
-    public function __construct(private readonly RelationshipAnalyzer $analyzer)
-    {
-    }
+    public function __construct(private readonly RelationshipAnalyzer $analyzer) {}
 
     public function discover(Workspace $workspace): Collection
     {
