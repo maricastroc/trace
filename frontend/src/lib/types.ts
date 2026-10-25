@@ -1,5 +1,7 @@
 export type ColumnType = "text" | "identifier" | "number" | "date";
 
+export type ScenarioSummary = { key: string; label: string; description: string };
+
 export type Meta = {
   product: string;
   tagline: string;
@@ -8,11 +10,14 @@ export type Meta = {
   limits: { upload_kb: number; rows: number; columns: number; tuples: number };
   workspace_ttl_days: number;
   demo_notice: string;
+  scenarios: ScenarioSummary[];
+  default_scenario: string;
 };
 
 export type Workspace = {
   id: string;
   name: string;
+  scenario: { key: string; label: string } | null;
   created_at: string;
   counts: { datasets: number; relationships: number; recipes: number; runs: number };
   token?: string;

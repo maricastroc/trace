@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Instrument_Sans, Instrument_Serif } from "next/font/google";
+import { Bricolage_Grotesque, IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
-const serif = Instrument_Serif({
-  variable: "--font-instrument-serif",
+const display = Bricolage_Grotesque({
+  variable: "--font-bricolage",
   subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
+  axes: ["opsz", "wdth"],
 });
 
 const sans = Instrument_Sans({
-  variable: "--font-instrument-sans",
+  variable: "--font-instrument",
   subsets: ["latin"],
   axes: ["wdth"],
 });
@@ -19,18 +18,18 @@ const sans = Instrument_Sans({
 const mono = IBM_Plex_Mono({
   variable: "--font-plex-mono",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "Trace",
-  description: "Every number has a story. Investigue de onde vem cada resultado, registro por registro.",
+  title: { default: "Trace", template: "%s · Trace" },
+  description: "Entenda como os dados se relacionam, de onde vêm os números e por que os resultados divergem.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="pt-BR" className={`${serif.variable} ${sans.variable} ${mono.variable} h-full`}>
-      <body className="min-h-full">
+    <html lang="pt-BR" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>

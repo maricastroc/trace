@@ -1,78 +1,103 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, request } from "./api";
-import type { Workspace } from "./types";
+import { forgetToken, readScenario, readTokens, writeScenario, writeToken, type KeyValueStorage } from "./scenario-storage";
+import type { Meta, ScenarioSummary, Workspace } from "./types";
 
-const STORAGE_KEY = "trace.workspace-token";
+type ReadyState = {
+  status: "ready";
+  token: string;
+  workspace: Workspace;
+  scenario: string;
+  scenarios: ScenarioSummary[];
+  demoNotice: string;
+  renewed: boolean;
+};
 
 type WorkspaceState =
   | { status: "loading"; message: string }
-  | { status: "ready"; token: string; workspace: Workspace; renewed: boolean }
+  | ReadyState
   | { status: "error"; error: ApiError };
 
-const WorkspaceContext = createContext<{ state: WorkspaceState; retry: () => void } | null>(null);
+type WorkspaceContextValue = {
+  state: WorkspaceState;
+  retry: () => void;
+  switchScenario: (scenario: string) => void;
+};
 
-function readToken() {
+const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+
+function browserStorage(): KeyValueStorage | null {
   try {
-    return window.localStorage.getItem(STORAGE_KEY);
+    return window.localStorage;
   } catch {
     return null;
   }
 }
 
-function writeToken(token: string) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, token);
-  } catch {}
-}
-
-let pending: Promise<{ token: string; workspace: Workspace; renewed: boolean }> | null = null;
-
-async function resolveWorkspace() {
-  const stored = readToken();
+async function openWorkspace(scenario: string) {
+  const storage = browserStorage();
+  const stored = readTokens(storage)[scenario];
 
   if (stored) {
     try {
       const { data } = await request<{ data: Workspace }>("/workspace", { token: stored });
-      return { token: stored, workspace: data, renewed: false };
+      if (data.scenario?.key === scenario) return { token: stored, workspace: data, renewed: false };
     } catch (error) {
       if (!(error instanceof ApiError) || error.status !== 401) throw error;
     }
+    forgetToken(storage, scenario);
   }
 
-  const { data } = await request<{ data: Workspace & { token: string } }>("/workspaces", { method: "POST" });
-  writeToken(data.token);
-  return { token: data.token, workspace: data, renewed: stored !== null };
+  const { data } = await request<{ data: Workspace & { token: string } }>("/workspaces", { method: "POST", body: { scenario } });
+  writeToken(storage, scenario, data.token);
+  return { token: data.token, workspace: data, renewed: stored !== undefined };
+}
+
+function asApiError(error: unknown) {
+  return error instanceof ApiError ? error : new ApiError(String(error), 0, "unknown");
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WorkspaceState>({ status: "loading", message: "Abrindo seu espaço de investigação" });
-  const [attempt, setAttempt] = useState(0);
+  const meta = useRef<Meta | null>(null);
+  const attempt = useRef(0);
 
-  useEffect(() => {
-    let active = true;
-    pending ??= resolveWorkspace();
-    pending
-      .then((result) => active && setState({ status: "ready", ...result }))
-      .catch((error) => {
-        pending = null;
-        if (active) {
-          setState({ status: "error", error: error instanceof ApiError ? error : new ApiError(String(error), 0, "unknown") });
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [attempt]);
-
-  const retry = useCallback(() => {
-    pending = null;
-    setState({ status: "loading", message: "Tentando novamente" });
-    setAttempt((value) => value + 1);
+  const load = useCallback(async (requested: string | null) => {
+    const current = ++attempt.current;
+    try {
+      meta.current ??= (await request<{ data: Meta }>("/meta")).data;
+      const { scenarios, default_scenario: fallback, demo_notice: demoNotice } = meta.current;
+      const keys = scenarios.map((s) => s.key);
+      const scenario = requested && keys.includes(requested) ? requested : readScenario(browserStorage(), keys, fallback);
+      writeScenario(browserStorage(), scenario);
+      const opened = await openWorkspace(scenario);
+      if (current === attempt.current) setState({ status: "ready", scenario, scenarios, demoNotice, ...opened });
+    } catch (error) {
+      if (current === attempt.current) setState({ status: "error", error: asApiError(error) });
+    }
   }, []);
 
-  return <WorkspaceContext.Provider value={{ state, retry }}>{children}</WorkspaceContext.Provider>;
+  useEffect(() => {
+    void load(null);
+  }, [load]);
+
+  const retry = useCallback(() => {
+    setState({ status: "loading", message: "Tentando novamente" });
+    void load(null);
+  }, [load]);
+
+  const switchScenario = useCallback(
+    (scenario: string) => {
+      const label = meta.current?.scenarios.find((s) => s.key === scenario)?.label ?? scenario;
+      setState({ status: "loading", message: `Abrindo o cenário ${label}` });
+      void load(scenario);
+    },
+    [load],
+  );
+
+  return <WorkspaceContext.Provider value={{ state, retry, switchScenario }}>{children}</WorkspaceContext.Provider>;
 }
 
 export function useWorkspace() {

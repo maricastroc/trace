@@ -1,5 +1,5 @@
-import { Workbench } from "@/components/app/Workbench";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <Workbench />;
+  redirect("/mapa");
 }
