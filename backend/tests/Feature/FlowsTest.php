@@ -79,7 +79,7 @@ class FlowsTest extends TestCase
         $relationship = $this->api($token, 'POST', 'relationships', [
             'from_dataset_id' => $orders['id'], 'from_column' => 'cliente_id', 'to_dataset_id' => $clients['id'], 'to_column' => 'id',
         ])->json('data');
-        $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm");
+        $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm", ['policy' => 'accept_multiplicity'])->assertOk();
         $recipe = $this->createRecipe($token, $orders['id'], [
             ['type' => 'join', 'relationship_id' => $relationship['id']],
             ['type' => 'aggregate', 'group_by' => [['alias' => 'clientes', 'column' => 'regiao']], 'measures' => [['function' => 'count', 'name' => 'n']]],

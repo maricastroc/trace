@@ -3,6 +3,7 @@
 namespace App\Modules\Relationships\Http;
 
 use App\Modules\Relationships\Relationship;
+use App\Modules\Relationships\RelationshipAnalyzer;
 use App\Modules\Relationships\RelationshipDiscovery;
 use App\Modules\Relationships\RelationshipPresenter;
 use App\Modules\Relationships\RelationshipService;
@@ -12,6 +13,7 @@ use App\Modules\Support\Pagination;
 use App\Modules\Workspaces\Workspace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class RelationshipController
 {
@@ -20,7 +22,7 @@ final class RelationshipController
     public function index(Workspace $workspace): JsonResponse
     {
         $relationships = $workspace->relationships()
-            ->with('fromDataset.latestVersion', 'toDataset.latestVersion')
+            ->with('fromDataset.latestVersion', 'toDataset.latestVersion.columns')
             ->orderByRaw("CASE status WHEN 'confirmed' THEN 0 WHEN 'suggested' THEN 1 ELSE 2 END")
             ->orderByDesc('score')
             ->get();
@@ -40,24 +42,36 @@ final class RelationshipController
 
     public function store(Request $request, Workspace $workspace): JsonResponse
     {
-        $data = $request->validate([
-            'from_dataset_id' => ['required', 'string'],
-            'from_column' => ['required', 'string'],
-            'to_dataset_id' => ['required', 'string'],
-            'to_column' => ['required', 'string'],
-        ], [
-            '*.required' => 'Escolha os dois conjuntos e as colunas que devem se relacionar.',
-        ]);
-
-        foreach (['from_column', 'to_column'] as $field) {
-            if (! Identifier::isValid($data[$field])) {
-                throw new DomainError('relationship.column_invalid', 'Coluna inválida.', 422, ['field' => $field]);
-            }
-        }
-
+        $data = $this->validatedPair($request);
         $relationship = $this->service->createManual($workspace, $data['from_dataset_id'], $data['from_column'], $data['to_dataset_id'], $data['to_column']);
 
         return response()->json(['data' => RelationshipPresenter::present($relationship)], 201);
+    }
+
+    public function evaluate(Request $request, Workspace $workspace): JsonResponse
+    {
+        $data = $this->validatedPair($request);
+        $draft = $this->service->evaluateDraft($workspace, $data['from_dataset_id'], $data['from_column'], $data['to_dataset_id'], $data['to_column']);
+        $existing = $draft['existing'];
+
+        return response()->json(['data' => [
+            'evidence' => $draft['evidence'],
+            'cardinality' => $draft['evidence']['cardinality'],
+            'cardinality_label' => RelationshipAnalyzer::cardinalityLabel($draft['evidence']['cardinality']),
+            'existing' => $existing === null ? null : ['id' => $existing->id, 'status' => $existing->status],
+        ]]);
+    }
+
+    public function correct(Request $request, Workspace $workspace, string $relationship): JsonResponse
+    {
+        $original = $workspace->relationships()->findOrFail($relationship);
+        $data = $this->validatedPair($request->merge(['from_dataset_id' => $original->from_dataset_id]));
+        $corrected = $this->service->correct($workspace, $original, $data['from_column'], $data['to_dataset_id'], $data['to_column']);
+
+        return response()->json([
+            'data' => RelationshipPresenter::present($corrected),
+            'replaced' => RelationshipPresenter::present($original->refresh()),
+        ]);
     }
 
     public function show(Workspace $workspace, string $relationship): JsonResponse
@@ -75,9 +89,13 @@ final class RelationshipController
         return response()->json($this->service->unmatchedRows($model, $side, Pagination::fromRequest($request)));
     }
 
-    public function confirm(Workspace $workspace, string $relationship): JsonResponse
+    public function confirm(Request $request, Workspace $workspace, string $relationship): JsonResponse
     {
-        $model = $this->service->confirm($workspace->relationships()->findOrFail($relationship));
+        $data = $request->validate(
+            ['policy' => ['nullable', 'string', Rule::in([Relationship::ACCEPT_MULTIPLICITY])]],
+            ['policy.in' => 'Política desconhecida. A única política disponível é accept_multiplicity.'],
+        );
+        $model = $this->service->confirm($workspace->relationships()->findOrFail($relationship), $data['policy'] ?? null);
 
         return response()->json(['data' => RelationshipPresenter::present($model)]);
     }
@@ -87,5 +105,35 @@ final class RelationshipController
         $model = $this->service->reject($workspace->relationships()->findOrFail($relationship));
 
         return response()->json(['data' => RelationshipPresenter::present($model)]);
+    }
+
+    public function reopen(Workspace $workspace, string $relationship): JsonResponse
+    {
+        $model = $this->service->reopen($workspace->relationships()->findOrFail($relationship));
+
+        return response()->json(['data' => RelationshipPresenter::present($model)]);
+    }
+
+    /**
+     * @return array{from_dataset_id: string, from_column: string, to_dataset_id: string, to_column: string}
+     */
+    private function validatedPair(Request $request): array
+    {
+        $data = $request->validate([
+            'from_dataset_id' => ['required', 'string'],
+            'from_column' => ['required', 'string'],
+            'to_dataset_id' => ['required', 'string'],
+            'to_column' => ['required', 'string'],
+        ], [
+            '*.required' => 'Escolha os dois conjuntos e as colunas que devem se relacionar.',
+        ]);
+
+        foreach (['from_column', 'to_column'] as $field) {
+            if (! Identifier::isValid($data[$field])) {
+                throw new DomainError('relationship.column_invalid', 'Coluna inválida.', 422, ['field' => $field]);
+            }
+        }
+
+        return $data;
     }
 }

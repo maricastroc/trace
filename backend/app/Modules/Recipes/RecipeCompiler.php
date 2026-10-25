@@ -6,6 +6,7 @@ use App\Modules\Datasets\Dataset;
 use App\Modules\Datasets\DatasetVersion;
 use App\Modules\Datasets\Import\ValueParser;
 use App\Modules\Relationships\Relationship;
+use App\Modules\Relationships\RelationshipStanding;
 use App\Modules\Support\Identifier;
 use App\Modules\Workspaces\Workspace;
 
@@ -318,10 +319,22 @@ final class RecipeCompiler
             $this->issue('blocker', 'join.relationship_rejected', 'Este relacionamento foi rejeitado. Confirme-o ou escolha outro.', $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
         }
 
+        if ($relationship->status === Relationship::CONFIRMED) {
+            $standing = RelationshipStanding::of($relationship);
+            if ($standing['key'] === RelationshipStanding::REVIEW) {
+                $this->issue('blocker', 'join.relationship_needs_review', $standing['reason'], $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
+            }
+            if ($standing['key'] === RelationshipStanding::CAVEAT) {
+                $this->issue('warning', 'join.multiplicity_accepted', "A relação {$relationship->fromDataset->key}.{$relationship->from_column} → {$relationship->toDataset->key}.{$relationship->to_column} aceita multiplicidade: uma linha pode gerar várias na junção. Cada linha multiplicada fica registrada nos diagnósticos da execução.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
+            }
+        }
+
         return [
             'type' => 'join',
             'relationship_id' => $relationship->id,
             'relationship_status' => $relationship->status,
+            'relationship_policy' => $relationship->policy,
+            'direction' => $fromIn !== null ? 'forward' : 'reverse',
             'join_type' => $joinType,
             'probe' => ['alias' => $probeInput['alias'], 'column' => $probeColumn, 'input' => $probeInput['position']],
             'lookup' => ['alias' => $lookupInput['alias'], 'column' => $lookupColumn, 'input' => $lookupInput['position']],

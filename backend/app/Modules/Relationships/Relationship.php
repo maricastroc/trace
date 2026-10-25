@@ -17,8 +17,10 @@ class Relationship extends Model
 
     public const REJECTED = 'rejected';
 
+    public const ACCEPT_MULTIPLICITY = 'accept_multiplicity';
+
     protected $fillable = [
-        'workspace_id', 'from_dataset_id', 'from_column', 'to_dataset_id', 'to_column', 'status', 'origin',
+        'workspace_id', 'from_dataset_id', 'from_column', 'to_dataset_id', 'to_column', 'status', 'policy', 'origin',
         'score', 'evidence', 'from_version_id', 'to_version_id', 'confirmed_at', 'rejected_at',
     ];
 

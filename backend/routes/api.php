@@ -28,10 +28,13 @@ Route::prefix('v1')->group(function () {
         Route::get('relationships', [RelationshipController::class, 'index']);
         Route::post('relationships', [RelationshipController::class, 'store']);
         Route::post('relationships/discover', [RelationshipController::class, 'discover']);
+        Route::post('relationships/evaluate', [RelationshipController::class, 'evaluate']);
         Route::get('relationships/{relationship}', [RelationshipController::class, 'show']);
         Route::get('relationships/{relationship}/unmatched', [RelationshipController::class, 'unmatched']);
         Route::post('relationships/{relationship}/confirm', [RelationshipController::class, 'confirm']);
         Route::post('relationships/{relationship}/reject', [RelationshipController::class, 'reject']);
+        Route::post('relationships/{relationship}/reopen', [RelationshipController::class, 'reopen']);
+        Route::post('relationships/{relationship}/correct', [RelationshipController::class, 'correct']);
 
         Route::get('recipes', [RecipeController::class, 'index']);
         Route::post('recipes', [RecipeController::class, 'store']);

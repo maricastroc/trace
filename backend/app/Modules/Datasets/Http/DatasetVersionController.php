@@ -25,14 +25,14 @@ final class DatasetVersionController
         $query = DB::table('source_rows')->where('dataset_version_id', $model->id);
 
         $column = $request->query('column');
-        $value = $request->query('value');
-        if (is_string($column) && $column !== '' && is_string($value)) {
+        if (is_string($column) && $column !== '' && $request->query->has('value')) {
             if (! in_array($column, $model->columnKeys(), true)) {
                 throw new DomainError('dataset.column_unknown', "A coluna {$column} não existe nesta versão.");
             }
-            $value === ''
+            $value = $request->query('value');
+            $value === null || $value === ''
                 ? $query->whereRaw('("values"->>?) IS NULL', [$column])
-                : $query->whereRaw('"values" @> jsonb_build_object(?::text, ?::text)', [$column, $value]);
+                : $query->whereRaw('"values" @> jsonb_build_object(?::text, ?::text)', [$column, (string) $value]);
         }
 
         $total = (clone $query)->count();

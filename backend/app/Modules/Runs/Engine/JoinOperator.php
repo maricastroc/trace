@@ -10,6 +10,9 @@ final class JoinOperator
         $probe = $step['probe'];
         $lookup = $step['lookup'];
         $isLeft = $step['join_type'] === 'left';
+        $expectsSingleMatch = ($step['direction'] ?? null) === 'forward'
+            && array_key_exists('relationship_policy', $step)
+            && $step['relationship_policy'] === null;
 
         [$index, $lookupNullRows] = $this->buildIndex($context->rows[$lookup['input']], $lookup['column']);
         $strippedIndex = $this->nearIndex(array_keys($index));
@@ -61,6 +64,15 @@ final class JoinOperator
                 }
 
                 continue;
+            }
+
+            if ($expectsSingleMatch && count($matches) > 1) {
+                throw new ExecutionFailed(
+                    'join.unexpected_multiplicity',
+                    "O valor {$key} aparece ".count($matches)." vezes em {$lookup['alias']}.{$lookup['column']}, mas a relação foi confirmada como N:1. A execução foi interrompida para não multiplicar linhas sem uma decisão explícita.",
+                    $position,
+                    ['key' => $key, 'matches' => count($matches)],
+                );
             }
 
             $stats['matched_tuples']++;

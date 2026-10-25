@@ -72,6 +72,7 @@ final class RelationshipAnalyzer
                 'samples' => array_map(fn (string $key) => ColumnValueIndex::value($key), array_slice(array_keys($unreferenced), 0, 8)),
             ],
             'near_matches' => $nearMatches,
+            'join_effect' => $this->joinEffect($from, $to, $fromNonNull, $fromNulls, $matchedRows),
             'cardinality' => $cardinality,
             'name' => $name,
             'types' => $types,
@@ -81,6 +82,54 @@ final class RelationshipAnalyzer
         $evidence['statements'] = $this->statements($evidence);
 
         return $evidence;
+    }
+
+    /**
+     * @param  array<string, int>  $from
+     * @param  array<string, int>  $to
+     * @return array<string, mixed>
+     */
+    private function joinEffect(array $from, array $to, int $fromNonNull, int $fromNulls, int $matchedRows): array
+    {
+        $innerRows = 0;
+        $multipliedRows = 0;
+        $extraByKey = [];
+
+        foreach ($from as $key => $count) {
+            $copies = $to[$key] ?? 0;
+            if ($copies === 0) {
+                continue;
+            }
+            $innerRows += $count * $copies;
+            if ($copies > 1) {
+                $multipliedRows += $count;
+                $extraByKey[$key] = $count * ($copies - 1);
+            }
+        }
+
+        arsort($extraByKey);
+        $unmatchedRows = $fromNonNull - $matchedRows;
+
+        return [
+            'source_rows' => $fromNonNull + $fromNulls,
+            'matched_rows' => $matchedRows,
+            'unmatched_rows' => $unmatchedRows,
+            'null_key_rows' => $fromNulls,
+            'inner_rows' => $innerRows,
+            'left_rows' => $innerRows + $unmatchedRows + $fromNulls,
+            'extra_rows' => $innerRows - $matchedRows,
+            'multiplied_rows' => $multipliedRows,
+            'repeated_keys' => count($extraByKey),
+            'samples' => array_map(
+                fn (string $key) => [
+                    'value' => ColumnValueIndex::value($key),
+                    'target_rows' => $to[$key],
+                    'source_rows' => $from[$key],
+                    'extra_rows' => $extraByKey[$key],
+                ],
+                array_slice(array_keys($extraByKey), 0, 8),
+            ),
+        ];
     }
 
     private function side(string $datasetId, string $datasetKey, string $datasetName, DatasetVersion $version, DatasetColumn $column, int $nonNull, int $nulls, int $distinct, bool $unique): array
@@ -182,6 +231,11 @@ final class RelationshipAnalyzer
             : ['kind' => 'uniqueness', 'text' => "A coluna {$to} não possui valores únicos: {$e['to']['duplicate_values']} valores se repetem, o que pode multiplicar registros numa junção."];
 
         $lines[] = ['kind' => 'cardinality', 'text' => 'Cardinalidade provável: '.self::cardinalityLabel($e['cardinality']).'.'];
+
+        $effect = $e['join_effect'];
+        if ($effect['extra_rows'] > 0) {
+            $lines[] = ['kind' => 'multiplicity', 'text' => 'Ligar '.$e['from']['dataset_key'].' a '.$e['to']['dataset_key'].' transformaria '.self::plural($effect['matched_rows'], 'linha com par', 'linhas com par').' em '.number_format($effect['inner_rows'], 0, ',', '.').': '.self::plural($effect['extra_rows'], 'linha a mais', 'linhas a mais').', por causa de '.self::plural($effect['repeated_keys'], 'id repetido', 'ids repetidos').' que '.($effect['repeated_keys'] === 1 ? 'é citado' : 'são citados').'.'];
+        }
 
         if ($e['match']['unmatched_rows'] > 0) {
             $lines[] = ['kind' => 'unmatched', 'text' => self::plural($e['match']['unmatched_rows'], 'registro não encontrou', 'registros não encontraram')." correspondência ({$e['match']['unmatched_distinct']} valores distintos)."];

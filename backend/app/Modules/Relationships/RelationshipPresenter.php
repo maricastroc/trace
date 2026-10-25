@@ -6,7 +6,7 @@ final class RelationshipPresenter
 {
     public static function present(Relationship $relationship, ?array $currentEvidence = null): array
     {
-        $relationship->loadMissing('fromDataset.latestVersion', 'toDataset.latestVersion');
+        $relationship->loadMissing('fromDataset.latestVersion', 'toDataset.latestVersion.columns');
         $evidence = $currentEvidence ?? $relationship->evidence;
         $fromLatest = $relationship->fromDataset->latestVersion?->id;
         $toLatest = $relationship->toDataset->latestVersion?->id;
@@ -14,6 +14,8 @@ final class RelationshipPresenter
         return [
             'id' => $relationship->id,
             'status' => $relationship->status,
+            'policy' => $relationship->policy,
+            'standing' => RelationshipStanding::of($relationship),
             'origin' => $relationship->origin,
             'score' => $evidence['score'] ?? $relationship->score,
             'from' => [

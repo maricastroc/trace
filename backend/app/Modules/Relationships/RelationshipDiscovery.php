@@ -12,6 +12,12 @@ final class RelationshipDiscovery
 {
     private const MIN_SCORE = 0.6;
 
+    private const NEAR_UNIQUE_RATIO = 0.95;
+
+    private const REPEATED_MIN_COVERAGE = 0.9;
+
+    private const REPEATED_MIN_MATCHED_VALUES = 10;
+
     public function __construct(private readonly RelationshipAnalyzer $analyzer) {}
 
     public function discover(Workspace $workspace): Collection
@@ -46,7 +52,8 @@ final class RelationshipDiscovery
         $found = [];
 
         foreach ($toVersion->columns as $toColumn) {
-            if (! $this->isKeyCandidate($toColumn)) {
+            $kind = $this->keyKind($toColumn);
+            if ($kind === null) {
                 continue;
             }
 
@@ -57,7 +64,7 @@ final class RelationshipDiscovery
                 }
 
                 $evidence = $this->analyzer->evaluate($fromVersion, $fromColumn, $toVersion, $toColumn);
-                if (! $this->qualifies($evidence)) {
+                if (! $this->qualifies($evidence, $kind)) {
                     continue;
                 }
 
@@ -80,22 +87,39 @@ final class RelationshipDiscovery
         return $found;
     }
 
-    private function isKeyCandidate(DatasetColumn $column): bool
+    private function keyKind(DatasetColumn $column): ?string
     {
         $profile = $column->profile;
+        $nonNull = $profile['non_null'] ?? 0;
+        $distinct = $profile['distinct'] ?? 0;
 
-        return $column->inferred_type !== 'date'
-            && ($profile['non_null'] ?? 0) >= 2
-            && ($profile['distinct'] ?? 0) >= 2
-            && ($profile['unique'] ?? false) === true;
+        if ($column->inferred_type === 'date' || $nonNull < 2 || $distinct < 2) {
+            return null;
+        }
+
+        if (($profile['unique'] ?? false) === true) {
+            return 'unique';
+        }
+
+        $nearUnique = in_array($column->inferred_type, ['identifier', 'number'], true)
+            && $distinct / $nonNull >= self::NEAR_UNIQUE_RATIO;
+
+        return $nearUnique ? 'repeated' : null;
     }
 
-    private function qualifies(array $evidence): bool
+    private function qualifies(array $evidence, string $kind): bool
     {
         $match = $evidence['match'];
 
         if ($match['matched_distinct'] < 2 || $evidence['score'] < self::MIN_SCORE) {
             return false;
+        }
+
+        if ($kind === 'repeated') {
+            return $evidence['name']['matched']
+                && $evidence['types']['compatible']
+                && $match['match_ratio'] >= self::REPEATED_MIN_COVERAGE
+                && $match['matched_distinct'] >= self::REPEATED_MIN_MATCHED_VALUES;
         }
 
         return $evidence['name']['matched'] || $match['match_ratio'] >= 0.8;

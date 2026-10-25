@@ -23,7 +23,7 @@ class JoinSemanticsTest extends TestCase
             'from_dataset_id' => $orders['id'], 'from_column' => 'cliente_id',
             'to_dataset_id' => $clients['id'], 'to_column' => 'id',
         ])->json('data');
-        $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm")->assertOk();
+        $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm", ['policy' => 'accept_multiplicity'])->assertOk();
 
         $recipe = $this->createRecipe($token, $orders['id'], [
             ['type' => 'join', 'relationship_id' => $relationship['id'], 'join_type' => $joinType],

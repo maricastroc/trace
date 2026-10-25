@@ -129,6 +129,29 @@ class JoinAndAggregateTest extends OperatorTestCase
         $this->assertSame(['p3', 'p4', 'p5'], $ignoredRows);
     }
 
+    public function test_a_join_confirmed_as_n_to_one_refuses_to_multiply_rows(): void
+    {
+        [$context, $alive] = $this->context($this->orders(), $this->clients());
+
+        try {
+            (new JoinOperator)->apply($context, $this->joinStep('inner') + ['direction' => 'forward', 'relationship_policy' => null], $alive);
+            $this->fail('the join should have stopped');
+        } catch (ExecutionFailed $failure) {
+            $this->assertSame('join.unexpected_multiplicity', $failure->errorCode);
+            $this->assertSame(['key' => 'c1', 'matches' => 2], $failure->details);
+        }
+    }
+
+    public function test_accepted_multiplicity_and_reverse_joins_may_multiply_rows(): void
+    {
+        foreach ([['direction' => 'forward', 'relationship_policy' => 'accept_multiplicity'], ['direction' => 'reverse', 'relationship_policy' => null]] as $extra) {
+            [$context, $alive] = $this->context($this->orders(), $this->clients());
+            [$output, $stats] = (new JoinOperator)->apply($context, $this->joinStep('inner') + $extra, $alive);
+            $this->assertCount(5, $output);
+            $this->assertSame(2, $stats['multiplied_tuples']);
+        }
+    }
+
     public function test_tuple_limit_stops_runaway_joins(): void
     {
         $orders = array_map(fn (int $i) => ["p{$i}", 'c1', '1'], range(1, 10));

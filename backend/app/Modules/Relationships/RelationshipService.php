@@ -27,21 +27,27 @@ final class RelationshipService
         );
     }
 
+    /**
+     * @return array{evidence: array<string, mixed>, existing: Relationship|null}
+     */
+    public function evaluateDraft(Workspace $workspace, string $fromDatasetId, string $fromColumn, string $toDatasetId, string $toColumn): array
+    {
+        [$from, $to, $evidence] = $this->evaluatePair($workspace, $fromDatasetId, $fromColumn, $toDatasetId, $toColumn);
+
+        $existing = Relationship::query()->where([
+            'workspace_id' => $workspace->id,
+            'from_dataset_id' => $from->id,
+            'from_column' => $fromColumn,
+            'to_dataset_id' => $to->id,
+            'to_column' => $toColumn,
+        ])->first();
+
+        return ['evidence' => $evidence, 'existing' => $existing];
+    }
+
     public function createManual(Workspace $workspace, string $fromDatasetId, string $fromColumn, string $toDatasetId, string $toColumn): Relationship
     {
-        if ($fromDatasetId === $toDatasetId) {
-            throw new DomainError('relationship.same_dataset', 'Escolha colunas de dois conjuntos de dados diferentes.');
-        }
-
-        $from = $workspace->datasets()->with('latestVersion.columns', 'latestVersion.dataset')->findOrFail($fromDatasetId);
-        $to = $workspace->datasets()->with('latestVersion.columns', 'latestVersion.dataset')->findOrFail($toDatasetId);
-
-        $evidence = $this->analyzer->evaluate(
-            $from->latestVersion,
-            $this->column($from->latestVersion, $fromColumn),
-            $to->latestVersion,
-            $this->column($to->latestVersion, $toColumn),
-        );
+        [$from, $to, $evidence] = $this->evaluatePair($workspace, $fromDatasetId, $fromColumn, $toDatasetId, $toColumn);
 
         $relationship = Relationship::query()->firstOrNew([
             'workspace_id' => $workspace->id,
@@ -54,6 +60,7 @@ final class RelationshipService
         if (! $relationship->exists || $relationship->status === Relationship::REJECTED) {
             $relationship->fill([
                 'status' => Relationship::SUGGESTED,
+                'policy' => null,
                 'origin' => $relationship->origin ?? 'manual',
                 'rejected_at' => null,
             ]);
@@ -69,12 +76,27 @@ final class RelationshipService
         return $relationship;
     }
 
-    public function confirm(Relationship $relationship): Relationship
+    public function confirm(Relationship $relationship, ?string $policy = null): Relationship
     {
         $evidence = $this->currentEvidence($relationship);
+        $target = "{$evidence['to']['dataset_key']}.{$evidence['to']['column']}";
+
+        if (! $evidence['to']['unique'] && $policy === null) {
+            throw new DomainError(
+                'relationship.multiplicity_requires_policy',
+                "{$target} tem valores repetidos: confirmar como N:1 multiplicaria linhas sem aviso. Aceite a multiplicidade explicitamente, corrija as colunas ou rejeite.",
+                422,
+                ['duplicate_values' => $evidence['to']['duplicate_values'], 'extra_rows' => $evidence['join_effect']['extra_rows']],
+            );
+        }
+
+        if ($evidence['to']['unique'] && $policy !== null) {
+            throw new DomainError('relationship.policy_not_needed', "{$target} é única: confirme sem ressalva.");
+        }
 
         $relationship->fill([
             'status' => Relationship::CONFIRMED,
+            'policy' => $policy,
             'score' => $evidence['score'],
             'evidence' => $evidence,
             'from_version_id' => $evidence['from']['version_id'],
@@ -90,11 +112,48 @@ final class RelationshipService
     {
         $relationship->fill([
             'status' => Relationship::REJECTED,
+            'policy' => null,
             'rejected_at' => now(),
             'confirmed_at' => null,
         ])->save();
 
         return $relationship;
+    }
+
+    public function reopen(Relationship $relationship): Relationship
+    {
+        $evidence = $this->currentEvidence($relationship);
+
+        $relationship->fill([
+            'status' => Relationship::SUGGESTED,
+            'policy' => null,
+            'score' => $evidence['score'],
+            'evidence' => $evidence,
+            'from_version_id' => $evidence['from']['version_id'],
+            'to_version_id' => $evidence['to']['version_id'],
+            'confirmed_at' => null,
+            'rejected_at' => null,
+        ])->save();
+
+        return $relationship;
+    }
+
+    public function correct(Workspace $workspace, Relationship $original, string $fromColumn, string $toDatasetId, string $toColumn): Relationship
+    {
+        $unchanged = $fromColumn === $original->from_column
+            && $toDatasetId === $original->to_dataset_id
+            && $toColumn === $original->to_column;
+
+        if ($unchanged) {
+            throw new DomainError('relationship.correction_unchanged', 'Escolha colunas diferentes das atuais para corrigir a relação.');
+        }
+
+        return DB::transaction(function () use ($workspace, $original, $fromColumn, $toDatasetId, $toColumn): Relationship {
+            $corrected = $this->createManual($workspace, $original->from_dataset_id, $fromColumn, $toDatasetId, $toColumn);
+            $this->reject($original);
+
+            return $corrected;
+        });
     }
 
     public function unmatchedRows(Relationship $relationship, string $side, Pagination $page): array
@@ -133,6 +192,30 @@ final class RelationshipService
                 'version_id' => $version->id,
             ],
         ];
+    }
+
+    /**
+     * @return array{0: Dataset, 1: Dataset, 2: array<string, mixed>}
+     */
+    private function evaluatePair(Workspace $workspace, string $fromDatasetId, string $fromColumn, string $toDatasetId, string $toColumn): array
+    {
+        if ($fromDatasetId === $toDatasetId) {
+            throw new DomainError('relationship.same_dataset', 'Escolha colunas de dois conjuntos de dados diferentes.');
+        }
+
+        $from = $workspace->datasets()->with('latestVersion.columns', 'latestVersion.dataset')->findOrFail($fromDatasetId);
+        $to = $workspace->datasets()->with('latestVersion.columns', 'latestVersion.dataset')->findOrFail($toDatasetId);
+        $fromVersion = $this->latest($from);
+        $toVersion = $this->latest($to);
+
+        $evidence = $this->analyzer->evaluate(
+            $fromVersion,
+            $this->column($fromVersion, $fromColumn),
+            $toVersion,
+            $this->column($toVersion, $toColumn),
+        );
+
+        return [$from, $to, $evidence];
     }
 
     private function latestVersions(Relationship $relationship): array
