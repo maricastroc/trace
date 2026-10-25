@@ -2,6 +2,7 @@
 
 namespace App\Modules\Runs\Http;
 
+use App\Modules\Recipes\PlainLanguage;
 use App\Modules\Runs\Lineage\RowJourney;
 use App\Modules\Runs\Lineage\RunLineage;
 use App\Modules\Runs\Run;
@@ -63,6 +64,13 @@ final class RunController
         $result = $request->query('result');
 
         return response()->json(['data' => $this->lineage->flow($model, is_numeric($result) ? (int) $result : null)]);
+    }
+
+    public function flows(Request $request, Workspace $workspace, string $run): JsonResponse
+    {
+        $limit = $this->optionalInt($request, 'limit') ?? 8;
+
+        return response()->json(['data' => $this->lineage->flows($this->ready($workspace, $run), min(max($limit, 1), 50))]);
     }
 
     public function result(Workspace $workspace, string $run, int $resultNo): JsonResponse
@@ -178,6 +186,8 @@ final class RunController
 
     private function plannedSteps(Run $run): array
     {
+        $plain = PlainLanguage::describe($run->steps(), $run->inputs());
+
         return array_map(fn (array $step) => [
             'position' => $step['position'],
             'id' => $step['id'],
@@ -189,6 +199,13 @@ final class RunController
             'excluded_count' => null,
             'duration_ms' => null,
             'stats' => null,
+            'join' => $step['type'] === 'join' ? [
+                'relationship_id' => $step['relationship_id'],
+                'join_type' => $step['join_type'],
+                'probe' => $step['probe'],
+                'lookup' => $step['lookup'],
+            ] : null,
+            'plain' => $plain[$step['position']],
         ], $run->steps());
     }
 

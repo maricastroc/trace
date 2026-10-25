@@ -91,6 +91,12 @@ final class RecipeCompiler
             $compiled[] = $step;
         }
 
+        $plain = PlainLanguage::describe($compiled, $this->inputs);
+        foreach ($compiled as &$step) {
+            $step['plain'] = $plain[$step['position']];
+        }
+        unset($step);
+
         return new CompiledRecipe($base->id, $this->inputs, $compiled, $this->issues);
     }
 

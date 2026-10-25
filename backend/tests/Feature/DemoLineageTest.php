@@ -63,6 +63,8 @@ class DemoLineageTest extends TestCase
         $this->assertSame([$september, $september - 4, 4], [$steps[2]['input_count'], $steps[2]['output_count'], $steps[2]['excluded_count']]);
         $this->assertSame([$september - 4, 44, $september - 4 - 44], [$steps[3]['input_count'], $steps[3]['output_count'], $steps[3]['excluded_count']]);
         $this->assertSame([44, 5], [$steps[4]['input_count'], $steps[4]['output_count']]);
+        $this->assertEquals(['alias' => 'refeicoes', 'column' => 'cozinha_id', 'input' => 0], $steps[2]['join']['probe']);
+        $this->assertNull($steps[1]['join']);
     }
 
     public function test_fortaleza_total_traces_back_to_exactly_the_contributing_meals_and_kitchens(): void

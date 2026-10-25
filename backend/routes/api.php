@@ -45,6 +45,7 @@ Route::prefix('v1')->group(function () {
         Route::get('runs/{run}', [RunController::class, 'show']);
         Route::get('runs/{run}/results', [RunController::class, 'results']);
         Route::get('runs/{run}/flow', [RunController::class, 'flow']);
+        Route::get('runs/{run}/flows', [RunController::class, 'flows']);
         Route::get('runs/{run}/results/{resultNo}', [RunController::class, 'result']);
         Route::get('runs/{run}/results/{resultNo}/contributors', [RunController::class, 'contributors']);
         Route::get('runs/{run}/results/{resultNo}/breakdown', [RunController::class, 'breakdown']);

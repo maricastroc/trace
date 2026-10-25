@@ -4,6 +4,7 @@ namespace App\Modules\Runs\Lineage;
 
 use App\Modules\Datasets\DatasetPresenter;
 use App\Modules\Datasets\Import\ValueParser;
+use App\Modules\Recipes\PlainLanguage;
 use App\Modules\Recipes\StepDescriber;
 use App\Modules\Runs\Run;
 use App\Modules\Support\DomainError;
@@ -17,8 +18,9 @@ final class RunLineage
     public function steps(Run $run): array
     {
         $stored = collect(DB::select('SELECT * FROM run_steps WHERE run_id = ? ORDER BY position', [$run->id]))->keyBy('position');
+        $plain = PlainLanguage::describe($run->steps(), $run->inputs());
 
-        return array_map(function (array $step) use ($stored) {
+        return array_map(function (array $step) use ($stored, $plain) {
             $row = $stored->get($step['position']);
 
             return [
@@ -32,6 +34,13 @@ final class RunLineage
                 'excluded_count' => $row ? (int) $row->excluded_count : null,
                 'duration_ms' => $row ? (int) $row->duration_ms : null,
                 'stats' => $row ? json_decode($row->stats, true) : null,
+                'join' => $step['type'] === 'join' ? [
+                    'relationship_id' => $step['relationship_id'],
+                    'join_type' => $step['join_type'],
+                    'probe' => $step['probe'],
+                    'lookup' => $step['lookup'],
+                ] : null,
+                'plain' => $plain[$step['position']],
             ];
         }, $run->steps());
     }
@@ -144,6 +153,156 @@ final class RunLineage
                 'trace' => $trace,
             ],
         ];
+    }
+
+    public function flows(Run $run, int $limit): array
+    {
+        $steps = $run->steps();
+        $results = DB::select('SELECT result_no, "values", contributor_count FROM run_result_rows WHERE run_id = ? ORDER BY contributor_count DESC, result_no', [$run->id]);
+
+        $groups = DB::select(
+            'WITH RECURSIVE anc AS (
+                SELECT tuple_no, parent_no, born_step, end_step, result_no AS r FROM run_tuples WHERE run_id = ? AND result_no IS NOT NULL
+                UNION
+                SELECT p.tuple_no, p.parent_no, p.born_step, p.end_step, a.r FROM run_tuples p JOIN anc a ON p.tuple_no = a.parent_no WHERE p.run_id = ?
+            )
+            SELECT r, born_step, end_step, count(*) AS n FROM anc GROUP BY r, born_step, end_step',
+            [$run->id, $run->id],
+        );
+        $byResult = [];
+        foreach ($groups as $group) {
+            $byResult[(int) $group->r][] = $group;
+        }
+
+        $contributing = [];
+        foreach (DB::select(
+            'SELECT t.result_no, s.input_position, count(DISTINCT s.source_row_id) AS n FROM run_tuples t
+             JOIN run_tuple_sources s ON s.run_id = t.run_id AND s.tuple_no = t.tuple_no
+             WHERE t.run_id = ? AND t.result_no IS NOT NULL GROUP BY t.result_no, s.input_position',
+            [$run->id],
+        ) as $row) {
+            $contributing[(int) $row->result_no][(int) $row->input_position] = (int) $row->n;
+        }
+
+        $related = $this->relatedExclusionsByResult($run);
+
+        $items = array_map(function (object $row) use ($steps, $byResult, $contributing, $related) {
+            $resultNo = (int) $row->result_no;
+            $counts = $this->traceCounts($steps, $byResult[$resultNo] ?? []);
+
+            return [
+                'result_no' => $resultNo,
+                'values' => json_decode($row->values, true),
+                'contributor_count' => (int) $row->contributor_count,
+                'base_tuples' => $counts['base'],
+                'trace' => $counts['trace'],
+                'contributing_rows' => (object) ($contributing[$resultNo] ?? []),
+                'related_exclusions' => $related[$resultNo] ?? [],
+            ];
+        }, $results);
+
+        $shown = array_slice($items, 0, max(1, $limit));
+        $rest = array_slice($items, max(1, $limit));
+
+        $baseContributors = (int) DB::selectOne(
+            'SELECT count(DISTINCT s.source_row_id) AS n FROM run_tuples t
+             JOIN run_tuple_sources s ON s.run_id = t.run_id AND s.tuple_no = t.tuple_no AND s.input_position = 0
+             WHERE t.run_id = ? AND t.result_no IS NOT NULL',
+            [$run->id],
+        )->n;
+
+        return [
+            'total_results' => count($items),
+            'base_contributors' => $baseContributors,
+            'results' => $shown,
+            'others' => $rest === [] ? null : $this->mergeFlows($rest, $steps),
+        ];
+    }
+
+    private function traceCounts(array $steps, array $groups): array
+    {
+        $count = function (callable $predicate) use ($groups): int {
+            $total = 0;
+            foreach ($groups as $group) {
+                $born = (int) $group->born_step;
+                $end = $group->end_step === null ? PHP_INT_MAX : (int) $group->end_step;
+                if ($predicate($born, $end)) {
+                    $total += (int) $group->n;
+                }
+            }
+
+            return $total;
+        };
+
+        $trace = [];
+        foreach ($steps as $step) {
+            $p = $step['position'];
+            $trace[] = [
+                'position' => $p,
+                'input_count' => $count(fn (int $born, int $end) => $born < $p && $end >= $p),
+                'output_count' => $step['type'] === 'aggregate' ? 1 : $count(fn (int $born, int $end) => $born <= $p && $end > $p),
+            ];
+        }
+
+        return ['base' => $count(fn (int $born) => $born === 0), 'trace' => $trace];
+    }
+
+    private function mergeFlows(array $items, array $steps): array
+    {
+        $trace = array_map(fn (array $step) => ['position' => $step['position'], 'input_count' => 0, 'output_count' => 0], $steps);
+        $related = [];
+        foreach ($items as $item) {
+            foreach ($item['trace'] as $i => $point) {
+                $trace[$i]['input_count'] += $point['input_count'];
+                $trace[$i]['output_count'] += $point['output_count'];
+            }
+            foreach ($item['related_exclusions'] as $entry) {
+                $key = "{$entry['step_position']}|{$entry['code']}";
+                $related[$key] = ['step_position' => $entry['step_position'], 'code' => $entry['code'], 'count' => ($related[$key]['count'] ?? 0) + $entry['count']];
+            }
+        }
+
+        return [
+            'result_nos' => array_column($items, 'result_no'),
+            'contributor_count' => array_sum(array_column($items, 'contributor_count')),
+            'base_tuples' => array_sum(array_column($items, 'base_tuples')),
+            'trace' => $trace,
+            'related_exclusions' => array_values($related),
+        ];
+    }
+
+    private function relatedExclusionsByResult(Run $run): array
+    {
+        $aggregate = $this->aggregateStep($run);
+        if ($aggregate === null) {
+            return [];
+        }
+
+        $joins = [];
+        $joinBindings = [];
+        $conditions = [];
+        $conditionBindings = [];
+        foreach ($aggregate['group_by'] as $i => $group) {
+            $joins[] = "JOIN run_tuple_sources gs{$i} ON gs{$i}.run_id = t.run_id AND gs{$i}.tuple_no = t.tuple_no AND gs{$i}.input_position = ?
+                JOIN source_rows gr{$i} ON gr{$i}.id = gs{$i}.source_row_id";
+            $joinBindings[] = $group['input'];
+            $conditions[] = "(rr.\"values\"->>?) IS NOT DISTINCT FROM (gr{$i}.\"values\"->>?)";
+            array_push($conditionBindings, $group['output'], $group['column']);
+        }
+
+        $rows = DB::select(
+            'SELECT rr.result_no, t.end_step, t.exclusion_code, count(*) AS n FROM run_tuples t '.implode(' ', $joins).
+            ' JOIN run_result_rows rr ON rr.run_id = t.run_id AND '.implode(' AND ', $conditions).
+            " WHERE t.run_id = ? AND t.fate = 'excluded' GROUP BY rr.result_no, t.end_step, t.exclusion_code ORDER BY t.end_step",
+            [...$joinBindings, ...$conditionBindings, $run->id],
+        );
+
+        $byResult = [];
+        foreach ($rows as $row) {
+            $byResult[(int) $row->result_no][] = ['step_position' => (int) $row->end_step, 'code' => $row->exclusion_code, 'count' => (int) $row->n];
+        }
+
+        return $byResult;
     }
 
     public function resultDetail(Run $run, int $resultNo): array
