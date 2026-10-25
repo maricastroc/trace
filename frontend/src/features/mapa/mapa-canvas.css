@@ -1,0 +1,1008 @@
+.mapa {
+  --f-display: var(--font-bricolage), "Instrument Sans", sans-serif;
+  --f-ui: var(--font-instrument), "Helvetica Neue", Arial, sans-serif;
+  --f-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --panel-w: clamp(420px, 40vw, 600px);
+  position: relative;
+  height: calc(100dvh - var(--bar-h) - var(--trail-h));
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .mapa {
+    --panel-w: 100vw;
+  }
+}
+
+.mapa .map-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  outline: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.mapa .map-stage.grabbing {
+  cursor: grabbing;
+}
+
+.mapa .map-stage:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--a-deep);
+  border-radius: 0;
+}
+
+.mapa .map-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 1px 1px, rgba(18, 20, 25, 0.13) 0.9px, transparent 1.2px) 0 0 / 28px 28px;
+}
+
+.mapa .map-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  transform-origin: 0 0;
+  transition: transform 0.6s var(--ease-out);
+}
+
+.mapa .map-world.still {
+  transition: none;
+}
+
+.mapa .map-links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.mapa .lk {
+  fill: none;
+  stroke: var(--ab);
+  stroke-linecap: round;
+  transition: stroke-width 0.25s, opacity 0.3s, stroke 0.3s;
+}
+
+.mapa .lk.suggested {
+  stroke-dasharray: 0.1 7;
+  stroke-width: 4.6;
+}
+
+.mapa .lk.confirmed {
+  stroke-width: 3.2;
+}
+
+.mapa .lk.rejected {
+  stroke: var(--ink-3);
+  stroke-dasharray: 2 8;
+  stroke-width: 1.5;
+  opacity: 0.45;
+}
+
+.mapa .lk-ghost {
+  fill: none;
+  stroke: var(--b);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  transform: translate(3px, -3px);
+  opacity: 0.9;
+}
+
+.mapa .lk-g.review .lk-ghost {
+  stroke-dasharray: 2 4;
+}
+
+.mapa .lk-under {
+  fill: none;
+  stroke: var(--ab-wash);
+  stroke-width: 18;
+  stroke-linecap: round;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.mapa .lk-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 24;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.mapa .lk-g {
+  transition: opacity 0.35s;
+}
+
+.mapa .lk-g.hover .lk {
+  stroke-width: 5.5;
+}
+
+.mapa .lk-g.sel .lk-under {
+  opacity: 1;
+}
+
+.mapa .lk-g.dim {
+  opacity: 0.3;
+}
+
+.mapa .lk-end {
+  stroke: var(--ab);
+  stroke-width: 2;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.mapa .lk-g.rejected .lk-end {
+  stroke: var(--ink-3);
+  opacity: 0.5;
+}
+
+.mapa .port {
+  fill: var(--sheet);
+  stroke: var(--ab);
+  stroke-width: 2.2;
+}
+
+.mapa .lk-g.rejected .port {
+  stroke: var(--ink-3);
+}
+
+.mapa .route-chev {
+  fill: none;
+  stroke: var(--ab);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mapa .tracer {
+  fill: var(--ab);
+}
+
+.mapa .tracer-halo {
+  fill: var(--ab);
+  opacity: 0.18;
+}
+
+.mapa .sheet {
+  position: absolute;
+  width: 360px;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2);
+  border-radius: 5px;
+  box-shadow: 0 1px 0 rgba(18, 20, 25, 0.04), 0 22px 44px -32px rgba(18, 20, 25, 0.55);
+  transition: transform 0.45s var(--ease-out), box-shadow 0.45s, opacity 0.35s, outline-color 0.3s;
+  cursor: default;
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+}
+
+.mapa .sheet::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 20px;
+  height: 20px;
+  border-left: 1px solid var(--ink-3);
+  border-top: 1px solid var(--ink-3);
+  transform: translate(-10px, -10px);
+  opacity: 0.55;
+}
+
+.mapa .sheet .stack {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--rule-2);
+  border-radius: 5px;
+  background: var(--sheet);
+  z-index: -1;
+}
+
+.mapa .sheet.lift {
+  transform: translateY(-4px);
+  box-shadow: 0 1px 0 rgba(18, 20, 25, 0.04), 0 30px 54px -32px rgba(18, 20, 25, 0.65);
+}
+
+.mapa .sheet.focus {
+  outline-color: var(--ab-wash);
+}
+
+.mapa .sheet.expanded {
+  z-index: 3;
+}
+
+.mapa .sheet.dim {
+  opacity: 0.5;
+}
+
+.mapa .sheet-head {
+  box-sizing: border-box;
+  height: 104px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.mapa .sheet.lod-overview .sheet-head {
+  height: 176px;
+  padding: 22px 24px 18px;
+  gap: 12px;
+}
+
+.mapa .sheet.lod-overview.bare .sheet-head {
+  border-bottom: 0;
+}
+
+.mapa .sheet-title {
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  font: 700 34px/1.02 var(--f-display);
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mapa .sheet.lod-overview .sheet-title {
+  font-size: 54px;
+}
+
+.mapa .sheet-title:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+  text-decoration-color: var(--a);
+}
+
+.mapa .sheet-dims {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14.5px;
+  color: var(--ink-2);
+}
+
+.mapa .sheet-dims b {
+  font: 600 23px/1 var(--f-mono);
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.mapa .sheet.lod-overview .sheet-dims {
+  font-size: 22px;
+}
+
+.mapa .sheet.lod-overview .sheet-dims b {
+  font-size: 40px;
+}
+
+.mapa .sheet-issues {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.mapa .sheet.lod-overview .sheet-issues .tagx {
+  font-size: 21px;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+.mapa .fields {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0 10px;
+}
+
+.mapa .field {
+  box-sizing: border-box;
+  width: 100%;
+  height: 46px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  background: none;
+  border: 0;
+  text-align: left;
+  transition: background 0.15s;
+  border-radius: 0;
+}
+
+.mapa .field:hover {
+  background: var(--paper);
+}
+
+.mapa .field .ft {
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+}
+
+.mapa .field.key .ft {
+  color: var(--ink);
+}
+
+.mapa .field .fn {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mapa .field .fn b {
+  font: 500 15px/1.2 var(--f-mono);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mapa .field .fn small {
+  font-size: 13.5px;
+  line-height: 1.3;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapa .field .fn small.warn {
+  color: var(--b-deep);
+  font-weight: 600;
+}
+
+.mapa .field .fn small.pos {
+  color: var(--ab);
+  font-weight: 600;
+}
+
+.mapa .field.reg {
+  background: var(--ab-wash);
+  box-shadow: inset 4px 0 0 var(--ab);
+}
+
+.mapa .field.reg .fn b {
+  color: var(--ab);
+  font-weight: 600;
+}
+
+.mapa .map-stage.problems .field:not(.has-issue) {
+  opacity: 0.4;
+}
+
+.mapa .map-stage.problems .lk-g {
+  opacity: 0.3;
+}
+
+.mapa .more-fields {
+  box-sizing: border-box;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  margin: 0 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-deep);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.mapa .more-fields:hover {
+  text-decoration: underline;
+}
+
+.mapa .mark {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border: 0;
+  padding: 0;
+  background: none;
+  border-radius: 50%;
+  transition: opacity 0.35s, transform 0.2s var(--ease-out);
+  z-index: 2;
+}
+
+.mapa .mark svg {
+  width: 44px;
+  height: 44px;
+  overflow: visible;
+}
+
+.mapa .mark:hover,
+.mapa .mark:focus-visible {
+  transform: scale(1.12);
+}
+
+.mapa .mark:focus-visible {
+  outline: 3px solid var(--a);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.mapa .mark .bgc {
+  fill: var(--sheet);
+  stroke: var(--rule-2);
+  stroke-width: 1;
+}
+
+.mapa .mark .trk {
+  fill: none;
+  stroke: var(--paper-2);
+  stroke-width: 4;
+}
+
+.mapa .mark .arc {
+  fill: none;
+  stroke: var(--ab);
+  stroke-width: 4;
+}
+
+.mapa .mark .miss {
+  fill: none;
+  stroke: var(--b);
+  stroke-width: 4;
+}
+
+.mapa .mark .xa,
+.mapa .mark .xb {
+  stroke-width: 1.3;
+  transition: transform 0.75s var(--ease-out);
+}
+
+.mapa .mark .xa {
+  stroke: var(--a);
+  transform: translate(-2px, 1.5px);
+}
+
+.mapa .mark .xb {
+  stroke: var(--b);
+  mix-blend-mode: multiply;
+  transform: translate(2px, -1.5px);
+}
+
+.mapa .mark.confirmed .xa,
+.mapa .mark.confirmed .xb {
+  transform: none;
+}
+
+.mapa .mark.caveat .bgc {
+  stroke: var(--b);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 2;
+}
+
+.mapa .mark .q {
+  font: 700 13px var(--f-ui);
+  fill: var(--ab);
+}
+
+.mapa .mark .q.warn {
+  fill: var(--b-deep);
+}
+
+.mapa .mark.attn .bgc {
+  stroke: var(--b);
+  stroke-width: 1.6;
+}
+
+.mapa .mark.rejected {
+  opacity: 0.5;
+}
+
+.mapa .mark.faded {
+  opacity: 0.4;
+}
+
+.mapa .mark:hover .bgc,
+.mapa .mark.sel .bgc {
+  stroke: var(--ab);
+  stroke-width: 2;
+}
+
+.mapa .mark .flash {
+  fill: none;
+  stroke: var(--ab);
+  stroke-width: 2;
+  opacity: 0;
+  transform-origin: 22px 22px;
+}
+
+.mapa .mark.stamp .flash {
+  animation: mapa-stamp 0.8s var(--ease-out);
+}
+
+@keyframes mapa-stamp {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+
+.mapa .ruler {
+  position: absolute;
+  height: 98px;
+  margin-top: -18px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.mapa .ruler line,
+.mapa .ruler path {
+  stroke: var(--ink-3);
+}
+
+.mapa .ruler {
+  opacity: 0.85;
+}
+
+.mapa .ruler text {
+  font: 500 12px var(--f-mono);
+  fill: var(--ink-3);
+}
+
+.mapa .ruler .tm {
+  fill: var(--ink);
+}
+
+.mapa .ruler .tm-lbl {
+  font-weight: 600;
+  fill: var(--ink);
+}
+
+.mapa .ruler g.on .tm,
+.mapa .ruler g.on .tm-lbl {
+  fill: var(--ab);
+}
+
+.mapa .map-ov {
+  position: absolute;
+  z-index: 5;
+  cursor: default;
+}
+
+.mapa .map-status {
+  left: 24px;
+  top: 16px;
+  max-width: 560px;
+  display: grid;
+  gap: 6px;
+  transition: opacity 0.3s;
+}
+
+.mapa .map-status h1 {
+  margin: 0;
+  font: 700 28px/1.1 var(--f-display);
+  letter-spacing: -0.025em;
+}
+
+.mapa .map-status p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.mapa .map-summary {
+  max-width: 52ch;
+}
+
+.mapa .map-discover {
+  justify-self: start;
+  font-size: 14px;
+}
+
+.mapa .map-discover[disabled] {
+  color: var(--ink-3);
+  text-decoration: none;
+}
+
+.mapa.panel-open .map-status,
+.mapa.panel-open .map-legend,
+.mapa .map-stage.focusing .map-legend {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mapa .map-tools {
+  right: 24px;
+  top: 20px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 50%;
+  transition: right 0.5s var(--ease-out);
+}
+
+.mapa.panel-open .map-tools,
+.mapa.panel-open .zoom-ui {
+  right: calc(var(--panel-w) + 24px);
+}
+
+.mapa .seg {
+  display: inline-flex;
+  background: var(--paper-2);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.mapa .seg button {
+  border: 0;
+  background: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.mapa .seg button[aria-pressed="true"] {
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(18, 20, 25, 0.15);
+}
+
+.mapa .zoom-ui {
+  right: 24px;
+  bottom: 18px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2);
+  border-radius: 12px;
+  padding: 4px;
+  transition: right 0.5s var(--ease-out);
+}
+
+.mapa .zoom-ui .icon-btn {
+  font: 600 20px/1 var(--f-ui);
+  width: 36px;
+  height: 36px;
+}
+
+.mapa .zoom-ui .zl {
+  font: 500 12.5px/1 var(--f-mono);
+  color: var(--ink-2);
+  min-width: 128px;
+  text-align: center;
+}
+
+.mapa .zoom-ui .btn {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.mapa .focus-bar {
+  left: 24px;
+  bottom: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: var(--ink);
+  color: var(--sheet);
+  border-radius: 12px;
+  padding: 6px 6px 6px 16px;
+  font-size: 14px;
+}
+
+.mapa .focus-bar .btn {
+  color: var(--sheet);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.25);
+  min-height: 34px;
+}
+
+.mapa .focus-bar .btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mapa .map-legend {
+  left: 24px;
+  bottom: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  font: 500 12.5px/1 var(--f-mono);
+  color: var(--ink-3);
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+  padding: 8px 10px;
+  border-radius: 10px;
+  max-width: calc(100% - 520px);
+  transition: opacity 0.3s;
+}
+
+.mapa .map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mapa .lg-dot {
+  width: 30px;
+  height: 5px;
+  background: radial-gradient(circle, var(--ab) 1.8px, transparent 2.1px) 0 50% / 7px 5px repeat-x;
+}
+
+.mapa .lg-line {
+  width: 30px;
+  height: 3px;
+  background: var(--ab);
+  border-radius: 2px;
+}
+
+.mapa .lg-cav {
+  width: 30px;
+  height: 7px;
+  background:
+    linear-gradient(var(--ab), var(--ab)) 0 4px / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, var(--b) 0 5px, transparent 5px 9px) 3px 0 / 100% 2px no-repeat;
+}
+
+.mapa .lg-rej {
+  width: 30px;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--ink-3) 0 3px, transparent 3px 9px);
+  opacity: 0.7;
+}
+
+.mapa .lg-ring {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: conic-gradient(var(--ab) 0 300deg, var(--b) 300deg);
+  mask: radial-gradient(circle, transparent 3.8px, #000 4.3px);
+}
+
+.mapa .lg-attn {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.6px solid var(--b);
+  display: inline-grid;
+  place-items: center;
+  font: 700 11px/1 var(--f-ui);
+  font-style: normal;
+  color: var(--b-deep);
+  background: var(--sheet);
+}
+
+.mapa .paths-card {
+  left: 24px;
+  top: 20px;
+  width: clamp(290px, 28vw, 360px);
+  background: var(--sheet);
+  border: 1px solid var(--rule-2);
+  border-radius: 14px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 30px 60px -40px rgba(18, 20, 25, 0.5);
+  max-height: calc(100% - 100px);
+  overflow: auto;
+}
+
+.mapa .paths-card h2 {
+  margin: 0;
+  font: 700 24px/1.05 var(--f-display);
+  letter-spacing: -0.02em;
+}
+
+.mapa .paths-q {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.mapa .select {
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--rule-2);
+  background: var(--sheet);
+  padding: 0 8px;
+  font: 500 13.5px var(--f-mono);
+  color: var(--ink);
+  max-width: 100%;
+}
+
+.mapa .path-opt {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid var(--rule-2);
+  background: var(--sheet);
+  border-radius: 12px;
+  padding: 12px 14px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.mapa .path-opt:hover {
+  border-color: var(--ink-3);
+}
+
+.mapa .path-opt[aria-pressed="true"] {
+  border-color: var(--ab);
+  background: var(--ab-wash);
+}
+
+.mapa .path-opt .route {
+  font: 500 13px/1.5 var(--f-mono);
+  color: var(--ink);
+}
+
+.mapa .path-opt .route i {
+  font-style: normal;
+  color: var(--ab);
+}
+
+.mapa .path-opt .role {
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.mapa .paths-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mapa .path-steps {
+  display: grid;
+  gap: 2px;
+  font: 500 12.5px/1.45 var(--f-mono);
+  color: var(--ink-2);
+}
+
+.mapa .path-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mapa .route-step {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--ab);
+  color: #fff;
+  font: 700 11px/1 var(--f-ui);
+  vertical-align: 1px;
+}
+
+.mapa .route-badge {
+  position: absolute;
+  left: -15px;
+  top: -15px;
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ab);
+  color: #fff;
+  font: 700 15px/1 var(--f-ui);
+  box-shadow: 0 0 0 4px var(--paper);
+}
+
+.mapa .sheet.lod-overview .route-badge {
+  width: 46px;
+  height: 46px;
+  left: -23px;
+  top: -23px;
+  font-size: 24px;
+}
+
+.mapa .map-tip {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  background: var(--ink);
+  color: var(--sheet);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  max-width: 300px;
+}
+
+.mapa .map-tip .mono {
+  font: 500 12.5px/1.4 var(--f-mono);
+}
+
+.mapa .map-list {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 20px 16px 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-content: start;
+}
+
+.mapa .map-list .sheet {
+  position: relative;
+  width: auto;
+}
+
+.mapa .map-list .sheet .sheet-head {
+  height: auto;
+}
+
+.mapa .map-list .map-discover {
+  margin-bottom: 12px;
+}
+
+.mapa .map-list h1 {
+  margin: 0;
+  font: 700 30px/1.05 var(--f-display);
+  letter-spacing: -0.03em;
+}
+
+.mapa .rel-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--rule-2);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--sheet);
+  text-align: left;
+}
+
+.mapa .rel-card .lt {
+  font: 500 13.5px/1.45 var(--f-mono);
+  overflow-wrap: anywhere;
+}
+
+.mapa .cov-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--paper-2);
+  overflow: hidden;
+  display: flex;
+}
+
+.mapa .cov-bar span {
+  height: 100%;
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mapa .map-world,
+  .mapa .sheet,
+  .mapa .mark,
+  .mapa .lk {
+    transition: none;
+  }
+}

@@ -1,117 +1,243 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useTrail } from "@/components/shell/Trail";
+import "./mapa-canvas.css";
+import "./mapa-panel.css";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTrail, type TrailItem } from "@/components/shell/Trail";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "@/components/ui/ScreenStates";
 import { SidePanel } from "@/components/ui/SidePanel";
-import { StatePill } from "@/components/ui/StatePill";
-import { formatCount, formatPercent, plural } from "@/lib/format";
-import { useDatasets, useRelationships, useVersion } from "@/lib/queries";
-import type { DatasetSummary } from "@/lib/types";
-import { UnderConstruction } from "@/features/shared/UnderConstruction";
+import { useToast } from "@/components/ui/Toast";
+import { formatCount, plural } from "@/lib/format";
+import { useDatasets, useDiscoverRelationships, useRelationships, useVersions } from "@/lib/queries";
+import { useMediaQuery } from "@/lib/useMediaQuery";
+import { MapCanvas, type Selection } from "./components/MapCanvas";
+import { MapList } from "./components/MapList";
+import { RelationPanel } from "./components/RelationPanel";
+import { FieldPanel, RecordPanel, TablePanel } from "./components/TablePanels";
+import { TYPE_WORDS } from "./components/FieldIcon";
+import { relationLabel } from "./model/evidence";
+import { buildMapModel, standingOf, type MapModel } from "./model/graph";
 
-const TYPE_WORDS: Record<string, string> = { identifier: "identificador", text: "texto", number: "número", date: "data" };
+type RecordEntry = { table: string; rowId: number; values: Record<string, string | null>; line: number };
 
-function DatasetPanelBody({ dataset }: { dataset: DatasetSummary }) {
-  const version = useVersion(dataset.latest_version?.id ?? null);
-  if (version.isPending) return <LoadingBlock label="Carregando colunas" />;
-  if (version.isError) return <ErrorBlock error={version.error} onRetry={() => version.refetch()} />;
-  const columns = version.data.data.columns;
-  return (
-    <section>
-      <h3 className="eyebrow mb-3">Campos · {columns.length}</h3>
-      <ul className="grid gap-2">
-        {columns.map((column) => (
-          <li key={column.key} className="grid gap-0.5 rounded-xl border border-rule bg-sheet px-3.5 py-2.5">
-            <span className="font-mono text-[14.5px] font-medium">{column.key}</span>
-            <span className="text-[13.5px] text-ink-2">
-              {TYPE_WORDS[column.type] ?? column.type} · {plural(column.profile.distinct, "valor distinto", "valores distintos")}
-              {column.profile.nulls > 0 ? ` · ${plural(column.profile.nulls, "vazio", "vazios")}` : ""}
-              {column.profile.unique ? " · único" : ""}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+const STATE_WORDS: Record<string, string> = { suggested: "sugerida", confirmed: "confirmada", caveat: "confirmada com ressalva", rejected: "rejeitada", review: "para reavaliar" };
+
+function parseSelection(params: URLSearchParams, model: MapModel | null): Selection {
+  const relation = params.get("relacao");
+  if (relation) return { kind: "rel", id: relation };
+  const table = params.get("tabela");
+  if (table && model?.byKey.has(table)) return { kind: "table", key: table };
+  const field = params.get("campo");
+  if (field && model) {
+    const dot = field.indexOf(".");
+    const key = field.slice(0, dot);
+    const column = field.slice(dot + 1);
+    if (dot > 0 && model.byKey.get(key)?.columns.some((c) => c.key === column)) return { kind: "field", key, column };
+  }
+  return null;
+}
+
+function recordTitle(entry: RecordEntry) {
+  return entry.values.nome ?? `${entry.table} · linha ${entry.line}`;
 }
 
 export function MapaScreen() {
-  useTrail([{ label: "Mapa" }]);
+  const params = useSearchParams();
+  const router = useRouter();
+  const toast = useToast();
+  const compact = useMediaQuery("(max-width: 979px)");
   const datasets = useDatasets();
   const relationships = useRelationships();
-  const [selected, setSelected] = useState<DatasetSummary | null>(null);
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const show = (table: DatasetSummary) => {
-    setSelected(table);
-    setOpen(true);
+  const versionIds = useMemo(() => datasets.data?.data.flatMap((d) => (d.latest_version ? [d.latest_version.id] : [])) ?? [], [datasets.data]);
+  const versions = useVersions(versionIds);
+  const discover = useDiscoverRelationships();
+  const [focusTable, setFocusTable] = useState<string | null>(null);
+  const [recordState, setRecordState] = useState<{ key: string; items: RecordEntry[] }>({ key: "", items: [] });
+
+  const ready = datasets.isSuccess && relationships.isSuccess && !versions.pending;
+  const model = useMemo(
+    () => (ready ? buildMapModel(datasets.data.data, versions.data, relationships.data.data) : null),
+    [ready, datasets.data, versions.data, relationships.data],
+  );
+
+  const selection = parseSelection(params, model);
+  const selectionKey = selection ? JSON.stringify(selection) : "";
+  const records = useMemo(() => (recordState.key === selectionKey ? recordState.items : []), [recordState, selectionKey]);
+  const top = records[records.length - 1] ?? null;
+  const panelOpen = selection !== null;
+
+  const go = useCallback((query: string) => router.push(query ? `/mapa?${query}` : "/mapa", { scroll: false }), [router]);
+  const selectRelation = useCallback((id: string) => go(`relacao=${encodeURIComponent(id)}`), [go]);
+  const openTable = useCallback((key: string) => go(`tabela=${encodeURIComponent(key)}`), [go]);
+  const openField = useCallback((key: string, column: string) => go(`campo=${encodeURIComponent(`${key}.${column}`)}`), [go]);
+  const close = useCallback(() => go(""), [go]);
+  const focus = useCallback(
+    (key: string | null) => {
+      setFocusTable(key);
+      if (key && selection?.kind === "rel") close();
+    },
+    [selection?.kind, close],
+  );
+  const openRecord = useCallback(
+    (table: string, rowId: number, values: Record<string, string | null>, line: number) =>
+      setRecordState({ key: selectionKey, items: [...records, { table, rowId, values, line }] }),
+    [selectionKey, records],
+  );
+  const popRecord = useCallback(() => setRecordState({ key: selectionKey, items: records.slice(0, -1) }), [selectionKey, records]);
+  const background = useCallback(() => {
+    if (selection) close();
+    else if (focusTable) setFocusTable(null);
+  }, [selection, focusTable, close]);
+  const clearAll = useCallback(() => {
+    setFocusTable(null);
+    if (selection) close();
+  }, [selection, close]);
+
+  useEffect(() => {
+    if (selection || !focusTable) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) setFocusTable(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [selection, focusTable]);
+
+  const relation = selection?.kind === "rel" ? (model?.relations.find((r) => r.id === selection.id) ?? null) : null;
+  const selectedTable = selection && selection.kind !== "rel" ? (model?.byKey.get(selection.key) ?? null) : null;
+  const selectedColumn = selection?.kind === "field" ? (selectedTable?.columns.find((c) => c.key === selection.column) ?? null) : null;
+  const recordTable = top ? (model?.byKey.get(top.table) ?? null) : null;
+
+  const trail: TrailItem[] = [{ label: "Mapa", href: "/mapa" }];
+  if (selection?.kind === "rel") trail.push({ label: relation ? relationLabel(relation) : "relação", href: `/mapa?relacao=${encodeURIComponent(selection.id)}` });
+  if (selection?.kind === "table") trail.push({ label: selection.key, href: `/mapa?tabela=${encodeURIComponent(selection.key)}` });
+  if (selection?.kind === "field") trail.push({ label: selection.key, href: `/mapa?tabela=${encodeURIComponent(selection.key)}` }, { label: `${selection.key}.${selection.column}` });
+  if (!selection && focusTable) trail.push({ label: `vizinhança de ${focusTable}` });
+  for (const entry of records) trail.push({ label: recordTitle(entry) });
+  useTrail(trail);
+
+  const runDiscover = () => {
+    const before = new Set(model?.relations.map((r) => r.id) ?? []);
+    discover.mutate(undefined, {
+      onSuccess: (response) => {
+        const fresh = response.data.filter((r) => !before.has(r.id)).length;
+        toast(fresh ? `${plural(fresh, "relação nova encontrada", "relações novas encontradas")}.` : "Nenhuma relação nova. As decisões existentes foram mantidas.");
+      },
+      onError: (error) => toast(error.message),
+    });
   };
 
-  const tables = datasets.data?.data ?? [];
-  const rels = relationships.data?.data ?? [];
-  const pending = rels.filter((r) => r.status === "suggested").length;
+  const failure = datasets.error ?? relationships.error ?? versions.error;
+  if (failure) {
+    return (
+      <div className="mx-auto grid max-w-[760px] gap-4 px-8 py-16">
+        <h1 className="sr-only">Mapa</h1>
+        <ErrorBlock
+          error={failure}
+          onRetry={() => {
+            datasets.refetch();
+            relationships.refetch();
+            versions.refetch();
+          }}
+        />
+      </div>
+    );
+  }
+  if (!model) {
+    return (
+      <div className="mx-auto max-w-[1240px] px-8 py-16">
+        <h1 className="sr-only">Mapa</h1>
+        <LoadingBlock label="Carregando tabelas e relações" />
+      </div>
+    );
+  }
+  if (!model.tables.length) {
+    return (
+      <div className="mx-auto max-w-[760px] px-8 py-16">
+        <h1 className="mb-4 font-display text-[36px] font-bold tracking-[-0.03em]">Mapa</h1>
+        <EmptyBlock title="Nenhuma tabela neste espaço.">Troque de cenário no menu ao lado do logo para ver dados de demonstração.</EmptyBlock>
+      </div>
+    );
+  }
+
+  let panel: { eyebrow: string; eyebrowClassName?: string; title: string; sub?: string; body: React.ReactNode } | null = null;
+  if (top && recordTable) {
+    panel = {
+      eyebrow: `Registro · ${recordTable.file} · linha ${top.line}`,
+      title: recordTitle(top),
+      sub: top.values.id !== undefined ? `${top.table}.id = ${top.values.id ?? "vazio"}` : undefined,
+      body: <RecordPanel key={`${top.table}-${top.rowId}`} table={recordTable} values={top.values} model={model} onOpenRecord={openRecord} />,
+    };
+  } else if (selection?.kind === "rel") {
+    panel = {
+      eyebrow: relation ? `Relação ${STATE_WORDS[standingOf(relation)]}` : "Relação",
+      eyebrowClassName: "eyebrow-ab",
+      title: relation ? `${relation.from.dataset_key} → ${relation.to.dataset_key}` : "Relação",
+      sub: relation ? `${relation.from.dataset_key}.${relation.from.column} = ${relation.to.dataset_key}.${relation.to.column}` : undefined,
+      body: (
+        <RelationPanel
+          key={selection.id}
+          id={selection.id}
+          listed={relation}
+          model={model}
+          onSelectRelation={selectRelation}
+          onFocusTable={focus}
+          onOpenTable={openTable}
+          onOpenRecord={openRecord}
+        />
+      ),
+    };
+  } else if (selection?.kind === "table" && selectedTable) {
+    panel = {
+      eyebrow: `Tabela · ${selectedTable.file} · versão ${selectedTable.versionNumber}`,
+      title: selectedTable.key,
+      sub: `${plural(selectedTable.rows, "linha", "linhas")} · ${plural(selectedTable.columns.length, "campo", "campos")}`,
+      body: <TablePanel key={selectedTable.key} table={selectedTable} model={model} onOpenField={openField} onSelectRelation={selectRelation} onFocusTable={focus} onOpenRecord={openRecord} />,
+    };
+  } else if (selection?.kind === "field" && selectedTable && selectedColumn) {
+    const p = selectedColumn.profile;
+    panel = {
+      eyebrow: `Campo · ${selectedTable.key}`,
+      title: selectedColumn.key,
+      sub: `${TYPE_WORDS[selectedColumn.type] ?? selectedColumn.type} · ${formatCount(p.non_null)} valores · ${formatCount(p.distinct)} diferentes${p.nulls ? ` · ${plural(p.nulls, "vazio", "vazios")}` : ""}`,
+      body: <FieldPanel key={`${selectedTable.key}.${selectedColumn.key}`} table={selectedTable} column={selectedColumn} model={model} onSelectRelation={selectRelation} onOpenRecord={openRecord} />,
+    };
+  }
+
+  const previous = records.length > 1 ? recordTitle(records[records.length - 2]) : relation ? relationLabel(relation) : selection?.kind === "field" ? `${selection.key}.${selection.column}` : (selection?.kind === "table" ? selection.key : "voltar");
 
   return (
-    <div className="mx-auto grid max-w-[1240px] gap-10 px-8 pt-9 pb-24">
-      <header className="grid gap-2">
-        <p className="eyebrow eyebrow-ab">Mapa{datasets.isSuccess ? ` · ${plural(tables.length, "tabela", "tabelas")}` : ""}</p>
-        <h1 className="font-display text-[clamp(30px,3.2vw,44px)] leading-[1.08] font-bold tracking-[-0.03em]">
-          {pending > 0 ? `${plural(pending, "relação aguarda", "relações aguardam")} sua decisão` : "Tabelas e relações"}
-        </h1>
-        <UnderConstruction>A visualização interativa das conexões, com zoom, foco e evidências em camadas, chega na próxima etapa. Abaixo, as tabelas e relações reais deste cenário.</UnderConstruction>
-      </header>
-
-      <section aria-labelledby="mapa-tabelas" className="grid gap-4">
-        <h2 id="mapa-tabelas" className="eyebrow">
-          Tabelas
-        </h2>
-        {datasets.isPending && <LoadingBlock label="Carregando tabelas" />}
-        {datasets.isError && <ErrorBlock error={datasets.error} onRetry={() => datasets.refetch()} />}
-        {datasets.isSuccess && tables.length === 0 && <EmptyBlock title="Nenhuma tabela neste espaço." />}
-        {tables.length > 0 && (
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-6">
-            {tables.map((table) => (
-              <li key={table.id}>
-                <button type="button" onClick={() => show(table)} className="sheet-card grid w-full gap-1.5 px-5 pt-4 pb-5 text-left hover:border-ink-3" aria-haspopup="dialog">
-                  <span className="font-display text-[28px] leading-none font-bold tracking-[-0.03em]">{table.key}</span>
-                  <span className="text-[14.5px] text-ink-2">
-                    <b className="font-mono text-[18px] font-semibold text-ink">{formatCount(table.latest_version?.row_count)}</b> linhas · {plural(table.latest_version?.column_count ?? 0, "campo", "campos")}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="mapa-relacoes" className="grid gap-4">
-        <h2 id="mapa-relacoes" className="eyebrow">
-          Relações sugeridas e decididas
-        </h2>
-        {relationships.isPending && <LoadingBlock label="Carregando relações" />}
-        {relationships.isError && <ErrorBlock error={relationships.error} onRetry={() => relationships.refetch()} />}
-        {relationships.isSuccess && rels.length === 0 && <EmptyBlock title="Nenhuma relação encontrada pela descoberta automática." />}
-        {rels.length > 0 && (
-          <ul className="grid max-w-[860px] gap-2">
-            {rels.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-rule bg-sheet px-4 py-3">
-                <span className="font-mono text-[14px]">
-                  {r.from.dataset_key}.{r.from.column} → {r.to.dataset_key}.{r.to.column}
-                </span>
-                <StatePill status={r.status} />
-                <span className="text-[14px] text-ink-2">
-                  cobertura {formatPercent(r.evidence.match.match_ratio)}
-                  {r.cardinality_label ? ` · ${r.cardinality_label}` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <SidePanel open={open} onClose={close} eyebrow="Tabela" title={selected?.key ?? ""} sub={selected ? `${selected.latest_version?.source_filename ?? ""} · versão ${selected.latest_version?.number ?? "—"}` : undefined}>
-        {selected && <DatasetPanelBody dataset={selected} />}
+    <div className={`mapa ${panelOpen ? "panel-open" : ""}`}>
+      {compact ? (
+        <MapList model={model} discovering={discover.isPending} onDiscover={runDiscover} onSelectRelation={selectRelation} onOpenTable={openTable} onOpenField={openField} />
+      ) : (
+        <MapCanvas
+          model={model}
+          selection={selection}
+          focusTable={focusTable}
+          panelOpen={panelOpen}
+          discovering={discover.isPending}
+          onDiscover={runDiscover}
+          onSelectRelation={selectRelation}
+          onOpenTable={openTable}
+          onOpenField={openField}
+          onFocusTable={focus}
+          onBackground={background}
+          onClearAll={clearAll}
+        />
+      )}
+      <SidePanel
+        open={panel !== null}
+        onClose={close}
+        onEscape={records.length ? popRecord : close}
+        eyebrow={panel?.eyebrow}
+        eyebrowClassName={panel?.eyebrowClassName}
+        title={panel?.title ?? ""}
+        sub={panel?.sub}
+        back={records.length ? { label: previous, onClick: popRecord } : undefined}
+        focusKey={`${selectionKey}|${records.length}`}
+      >
+        {panel?.body}
       </SidePanel>
     </div>
   );

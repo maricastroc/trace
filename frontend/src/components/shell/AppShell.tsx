@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { API_URL } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace";
+import { ToastProvider } from "@/components/ui/Toast";
 import { AREAS, isCurrentArea } from "./areas";
 import { Brand } from "./Brand";
 import { ScenarioMenu } from "./ScenarioMenu";
@@ -82,7 +83,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main id="conteudo" tabIndex={-1} className="relative outline-none">
         {state.status === "loading" && <Loading message={state.message} />}
         {state.status === "error" && <Failure />}
-        {state.status === "ready" && <div key={state.token}>{children}</div>}
+        {state.status === "ready" && (
+          <ToastProvider key={state.token}>
+            <div>{children}</div>
+          </ToastProvider>
+        )}
       </main>
     </TrailProvider>
   );

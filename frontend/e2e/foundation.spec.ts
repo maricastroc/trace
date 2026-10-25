@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { datasetCard, scenarioButton, selectScenario } from "./scenario";
+import { relationMark, scenarioButton, selectScenario, tableSheet } from "./scenario";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -9,12 +9,9 @@ test.beforeEach(async ({ page }) => {
 test("the root opens the Mapa with the real meals tables and relation", async ({ page }) => {
   await expect(page).toHaveURL(/\/mapa$/);
   await expect(page).toHaveTitle("Mapa · Trace");
-  await expect(datasetCard(page, "refeicoes")).toContainText("118 linhas");
-  await expect(datasetCard(page, "cozinhas")).toContainText("15 linhas");
-
-  const relation = page.getByRole("listitem").filter({ hasText: "refeicoes.cozinha_id → cozinhas.id" });
-  await expect(relation).toContainText(/sugerida|confirmada|rejeitada/);
-  await expect(relation).toContainText(/cobertura \d+,\d%/);
+  await expect(tableSheet(page, "refeicoes")).toHaveAccessibleName("Tabela refeicoes, 118 linhas");
+  await expect(tableSheet(page, "cozinhas")).toHaveAccessibleName("Tabela cozinhas, 15 linhas");
+  await expect(relationMark(page, "refeicoes.cozinha_id → cozinhas.id")).toHaveAccessibleName(/(sugerida|confirmada|rejeitada), cobertura 97,4%, destino único/);
 
   await expect(page.getByRole("button", { name: "dados sintéticos" })).toBeVisible();
 });
@@ -65,30 +62,31 @@ test("switching scenario by keyboard loads its own workspace from the API", asyn
   await page.keyboard.press("Enter");
 
   await expect(button).toContainText("Cadastro e atendimentos");
-  await expect(datasetCard(page, "beneficiarios")).toContainText("1.248 linhas");
-  await expect(datasetCard(page, "atendimentos")).toContainText("9.756 linhas");
-  await expect(datasetCard(page, "cozinhas")).toContainText("12 linhas");
-  await expect(datasetCard(page, "refeicoes")).toHaveCount(0);
+  await expect(tableSheet(page, "beneficiarios")).toHaveAccessibleName("Tabela beneficiarios, 1.248 linhas");
+  await expect(tableSheet(page, "atendimentos")).toHaveAccessibleName("Tabela atendimentos, 9.756 linhas");
+  await expect(tableSheet(page, "cozinhas")).toHaveAccessibleName("Tabela cozinhas, 12 linhas");
+  await expect(tableSheet(page, "refeicoes")).toHaveCount(0);
 
   const tokens = await page.evaluate(() => JSON.parse(localStorage.getItem("trace.workspace-tokens") ?? "{}"));
   expect(Object.keys(tokens).sort()).toEqual(["cadastro", "refeicoes"]);
   expect(tokens.cadastro).not.toEqual(tokens.refeicoes);
 
   await selectScenario(page, "refeicoes");
-  await expect(datasetCard(page, "beneficiarios")).toHaveCount(0);
+  await expect(tableSheet(page, "beneficiarios")).toHaveCount(0);
 });
 
 test("a table opens in a side panel that closes with Escape and returns focus", async ({ page }) => {
-  const card = datasetCard(page, "cozinhas");
-  await card.click();
+  const title = tableSheet(page, "cozinhas").getByRole("button", { name: "cozinhas", exact: true });
+  await title.click();
 
   const panel = page.getByRole("dialog", { name: "cozinhas" });
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("heading", { name: "cozinhas" })).toBeFocused();
-  await expect(panel.getByText("Campos · 4")).toBeVisible();
-  await expect(panel.getByText("municipio", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/mapa\?tabela=cozinhas$/);
+  await expect(panel.getByRole("button", { name: /^municipio/ })).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
-  await expect(card).toBeFocused();
+  await expect(page).toHaveURL(/\/mapa$/);
+  await expect(title).toBeFocused();
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { query, request } from "./api";
 import type {
   BreakdownRow,
@@ -17,6 +17,9 @@ import type {
   Paginated,
   Recipe,
   Relationship,
+  RelationshipDraft,
+  RelationshipPair,
+  RelationshipPolicy,
   ResultDetail,
   ResultRow,
   RunDetail,
@@ -153,17 +156,95 @@ export function useVersionRows(versionId: string | null, page: number) {
   );
 }
 
-export function useConfirmRelationship() {
+function combineVersions(results: UseQueryResult<{ data: DatasetVersion }>[]) {
+  const data: Record<string, DatasetVersion> = {};
+  for (const result of results) if (result.data) data[result.data.data.id] = result.data.data;
+  return {
+    data,
+    pending: results.some((result) => result.isPending),
+    error: results.find((result) => result.error)?.error ?? null,
+    refetch: () => results.forEach((result) => result.refetch()),
+  };
+}
+
+export function useVersions(versionIds: string[]) {
   const token = useToken();
+  return useQueries({
+    queries: versionIds.map((id) => ({
+      queryKey: ["version", id, token],
+      queryFn: ({ signal }: { signal: AbortSignal }) => request<{ data: DatasetVersion }>(`/dataset-versions/${id}`, { token, signal }),
+      enabled: token !== null,
+    })),
+    combine: combineVersions,
+  });
+}
+
+export function useRowsWhere(versionId: string | null, column: string | null, value: string | null, perPage = 10, page = 1) {
+  const params = new URLSearchParams({ column: column ?? "", value: value ?? "", page: String(page), per_page: String(perPage) });
+  return useApi<Paginated<SourceRow>>(
+    ["version-rows-where", versionId, column, value, perPage, page],
+    versionId && column && value !== null ? `/dataset-versions/${versionId}/rows?${params.toString()}` : null,
+    { keepPrevious: true },
+  );
+}
+
+export function useRelationshipDraft(pair: RelationshipPair | null) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ["relationship-draft", pair, token],
+    queryFn: ({ signal }) => request<{ data: RelationshipDraft }>("/relationships/evaluate", { method: "POST", body: pair, token, signal }),
+    enabled: token !== null && pair !== null,
+    placeholderData: keepPreviousData,
+  });
+}
+
+function useRelationshipInvalidation() {
   const client = useQueryClient();
+  return () => {
+    client.invalidateQueries({ queryKey: ["relationships"] });
+    client.invalidateQueries({ queryKey: ["relationship"] });
+    client.invalidateQueries({ queryKey: ["relationship-draft"] });
+    client.invalidateQueries({ queryKey: ["recipes"] });
+  };
+}
+
+export type RelationshipDecision = "confirm" | "reject" | "reopen";
+
+export function useDecideRelationship() {
+  const token = useToken();
+  const invalidate = useRelationshipInvalidation();
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "confirm" | "reject" }) =>
-      request<{ data: Relationship }>(`/relationships/${id}/${action}`, { method: "POST", token }),
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["relationships"] });
-      client.invalidateQueries({ queryKey: ["relationship"] });
-      client.invalidateQueries({ queryKey: ["recipes"] });
-    },
+    mutationFn: ({ id, action, policy }: { id: string; action: RelationshipDecision; policy?: RelationshipPolicy }) =>
+      request<{ data: Relationship }>(`/relationships/${id}/${action}`, { method: "POST", token, body: policy ? { policy } : undefined }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCorrectRelationship() {
+  const token = useToken();
+  const invalidate = useRelationshipInvalidation();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; from_column: string; to_dataset_id: string; to_column: string }) =>
+      request<{ data: Relationship; replaced: Relationship }>(`/relationships/${id}/correct`, { method: "POST", body, token }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCreateRelationship() {
+  const token = useToken();
+  const invalidate = useRelationshipInvalidation();
+  return useMutation({
+    mutationFn: (pair: RelationshipPair) => request<{ data: Relationship }>("/relationships", { method: "POST", body: pair, token }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDiscoverRelationships() {
+  const token = useToken();
+  const invalidate = useRelationshipInvalidation();
+  return useMutation({
+    mutationFn: () => request<{ data: Relationship[]; meta: { found: number } }>("/relationships/discover", { method: "POST", token }),
+    onSuccess: invalidate,
   });
 }
 

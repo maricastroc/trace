@@ -118,6 +118,7 @@ export type Evidence = {
   };
   unreferenced: { rows: number; samples: string[] };
   near_matches: { value: string; candidate: string; kind: "leading_zeros" | "case_or_spacing" }[];
+  join_effect?: JoinEffect;
   cardinality: string;
   name: { matched: boolean; reason: string };
   types: { compatible: boolean; detail: string };
@@ -127,9 +128,30 @@ export type Evidence = {
 
 export type RelationshipStatus = "suggested" | "confirmed" | "rejected";
 
+export type RelationshipStandingKey = "suggested" | "confirmed" | "caveat" | "rejected" | "review";
+
+export type RelationshipStanding = { key: RelationshipStandingKey; usable: boolean; reason: string | null };
+
+export type RelationshipPolicy = "accept_multiplicity";
+
+export type JoinEffect = {
+  source_rows: number;
+  matched_rows: number;
+  unmatched_rows: number;
+  null_key_rows: number;
+  inner_rows: number;
+  left_rows: number;
+  extra_rows: number;
+  multiplied_rows: number;
+  repeated_keys: number;
+  samples: { value: string; target_rows: number; source_rows: number; extra_rows: number }[];
+};
+
 export type Relationship = {
   id: string;
   status: RelationshipStatus;
+  policy: RelationshipPolicy | null;
+  standing: RelationshipStanding;
   origin: string;
   score: number;
   from: { dataset_id: string; dataset_key: string; dataset_name: string; column: string };
@@ -138,9 +160,24 @@ export type Relationship = {
   cardinality_label: string | null;
   evidence: Evidence;
   evidence_is_current: boolean;
+  evaluated_versions?: { from: string; to: string };
   confirmed_at: string | null;
   rejected_at: string | null;
   created_at: string;
+};
+
+export type RelationshipDraft = {
+  evidence: Evidence;
+  cardinality: string;
+  cardinality_label: string;
+  existing: { id: string; status: RelationshipStatus } | null;
+};
+
+export type RelationshipPair = {
+  from_dataset_id: string;
+  from_column: string;
+  to_dataset_id: string;
+  to_column: string;
 };
 
 export type Condition = {
