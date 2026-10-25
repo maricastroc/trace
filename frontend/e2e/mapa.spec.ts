@@ -322,3 +322,21 @@ test("searching for relations again keeps the decisions already made", async ({ 
   expect((await api.find("refeicoes.cozinha_id", "cozinhas.id"))?.status).toBe("rejected");
   await api.decide(meals!.id, "reopen");
 });
+
+test("validity is declared explicitly in the table panel and marked on the map", async ({ page, request }) => {
+  const api = await open(page, request, "cadastro");
+  await api.clearValidity("beneficiarios");
+
+  await page.goto("/mapa?tabela=beneficiarios");
+  const panel = page.getByRole("dialog", { name: "beneficiarios" });
+  const declare = panel.getByRole("button", { name: "Declarar vigência" });
+  await expect(declare).toBeDisabled();
+  await panel.getByRole("radio", { name: /^Sim: quem tem fim em 31\/12/ }).check();
+  await declare.click();
+
+  await expect(panel).toContainText("data_cadastro marca o início e data_desligamento o fim; o dia do fim ainda conta como vigente.");
+  await expect(tableSheet(page, "beneficiarios").getByRole("button", { name: "Campo data_cadastro: início da vigência" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "Remover declaração" }).click();
+  await expect(panel.getByRole("button", { name: "Declarar vigência" })).toBeVisible();
+});

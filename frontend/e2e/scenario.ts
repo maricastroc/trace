@@ -47,7 +47,7 @@ type Relation = {
 export async function workspaceApi(page: Page, request: APIRequestContext, scenario: ScenarioKey) {
   const tokens = await page.evaluate(() => JSON.parse(localStorage.getItem("trace.workspace-tokens") ?? "{}"));
   const headers = { "X-Trace-Workspace": tokens[scenario] as string, Accept: "application/json" };
-  const call = async <T>(method: "GET" | "POST", path: string, data?: unknown): Promise<T> => {
+  const call = async <T>(method: "GET" | "POST" | "DELETE", path: string, data?: unknown): Promise<T> => {
     const response = await request.fetch(`${API_URL}${path}`, { method, headers, data });
     expect(response.ok(), `${method} ${path} → ${response.status()}`).toBe(true);
     return (await response.json()) as T;
@@ -59,6 +59,10 @@ export async function workspaceApi(page: Page, request: APIRequestContext, scena
   return {
     relations,
     find,
+    async clearValidity(key: string) {
+      const dataset = (await datasets()).find((d) => d.key === key)!;
+      await call("DELETE", `/datasets/${dataset.id}/validity`);
+    },
     async decide(id: string, action: "confirm" | "reject" | "reopen") {
       return (await call<{ data: Relation }>("POST", `/relationships/${id}/${action}`)).data;
     },

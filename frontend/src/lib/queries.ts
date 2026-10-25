@@ -239,6 +239,33 @@ export function useCreateRelationship() {
   });
 }
 
+function useDatasetInvalidation() {
+  const client = useQueryClient();
+  return () => {
+    client.invalidateQueries({ queryKey: ["datasets"] });
+    client.invalidateQueries({ queryKey: ["recipes"] });
+  };
+}
+
+export function useDeclareValidity() {
+  const token = useToken();
+  const invalidate = useDatasetInvalidation();
+  return useMutation({
+    mutationFn: ({ datasetId, ...body }: { datasetId: string; start_column: string; end_column: string | null; end_inclusive: boolean }) =>
+      request<{ data: DatasetSummary }>(`/datasets/${datasetId}/validity`, { method: "PUT", body, token }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useClearValidity() {
+  const token = useToken();
+  const invalidate = useDatasetInvalidation();
+  return useMutation({
+    mutationFn: (datasetId: string) => request<{ data: DatasetSummary }>(`/datasets/${datasetId}/validity`, { method: "DELETE", token }),
+    onSuccess: invalidate,
+  });
+}
+
 export function useDiscoverRelationships() {
   const token = useToken();
   const invalidate = useRelationshipInvalidation();

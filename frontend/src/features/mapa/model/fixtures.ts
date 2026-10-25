@@ -14,7 +14,7 @@ export function profile(overrides: Partial<ColumnProfile> = {}): ColumnProfile {
   };
 }
 
-export function dataset(key: string, rows: number): DatasetSummary {
+export function dataset(key: string, rows: number, validity: DatasetSummary["validity"] = null): DatasetSummary {
   return {
     id: `ds-${key}`,
     key,
@@ -24,6 +24,7 @@ export function dataset(key: string, rows: number): DatasetSummary {
     created_at: "2026-10-24T00:00:00Z",
     updated_at: "2026-10-24T00:00:00Z",
     latest_version: { id: `v-${key}`, dataset_id: `ds-${key}`, number: 1, source_filename: `${key}.csv`, row_count: rows, column_count: 0, created_at: "2026-10-24T00:00:00Z" },
+    validity,
   };
 }
 

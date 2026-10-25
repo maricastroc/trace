@@ -70,6 +70,22 @@ describe("buildMapModel", () => {
   });
 });
 
+describe("validity declaration", () => {
+  it("marks the declared start and end columns and keeps them visible", () => {
+    const model = buildMapModel(
+      [dataset("beneficiarios", 3, { start_column: "inicio", end_column: "fim", end_inclusive: true, declared_at: null })],
+      { "v-beneficiarios": version("beneficiarios", [{ key: "inicio", type: "date" }, { key: "fim", type: "date" }, { key: "nome", type: "text" }]) },
+      [],
+    );
+    const columns = model.byKey.get("beneficiarios")!.columns;
+    expect(columns.map((c) => [c.key, c.validity, c.relevant])).toEqual([
+      ["inicio", "start", true],
+      ["fim", "end", true],
+      ["nome", null, false],
+    ]);
+  });
+});
+
 describe("relations around a table", () => {
   const a = relation("a", ["atendimentos", "cozinha_id"], ["cozinhas", "id"], "confirmed");
   const b = relation("b", ["atendimentos", "beneficiario_id"], ["beneficiarios", "id"]);

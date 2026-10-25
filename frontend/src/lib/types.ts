@@ -54,6 +54,13 @@ export type DatasetColumn = {
   profile: ColumnProfile;
 };
 
+export type ValidityDeclaration = {
+  start_column: string;
+  end_column: string | null;
+  end_inclusive: boolean;
+  declared_at: string | null;
+};
+
 export type DatasetSummary = {
   id: string;
   key: string;
@@ -63,6 +70,7 @@ export type DatasetSummary = {
   created_at: string;
   updated_at: string;
   latest_version: VersionSummary | null;
+  validity: ValidityDeclaration | null;
 };
 
 export type DatasetVersion = VersionSummary & {
@@ -180,7 +188,8 @@ export type RelationshipPair = {
   to_column: string;
 };
 
-export type Condition = {
+export type ComparisonCondition = {
+  kind?: undefined;
   alias: string;
   column: string;
   input?: number;
@@ -188,6 +197,24 @@ export type Condition = {
   value: unknown;
   value_type: "text" | "number" | "date";
 };
+
+export type ValidityReading = "started" | "active_any" | "active_at_end";
+
+export type ValidityCondition = {
+  kind: "validity";
+  alias: string;
+  input?: number;
+  reading: ValidityReading;
+  from: string;
+  to: string;
+  start_column?: string | null;
+  end_column?: string | null;
+  end_inclusive?: boolean;
+};
+
+export type Condition = ComparisonCondition | ValidityCondition;
+
+export type MeasureFunction = "sum" | "count" | "count_distinct";
 
 export type JoinSide = { alias: string; column: string; input: number };
 
@@ -207,7 +234,7 @@ export type CompiledStep = {
   probe?: JoinSide;
   lookup?: JoinSide;
   group_by?: { alias: string; column: string; input: number; output: string; type: ColumnType }[];
-  measures?: { function: "sum" | "count"; alias?: string; column?: string; input?: number; name: string }[];
+  measures?: { function: MeasureFunction; alias?: string; column?: string; input?: number; name: string }[];
 };
 
 export type RecipeInput = {
@@ -312,11 +339,18 @@ export type OutputColumn = {
   label: string;
   role: "group_key" | "measure" | "field";
   type: ColumnType;
-  function?: "sum" | "count";
+  function?: MeasureFunction;
   source: { alias: string; column: string; input: number } | null;
 };
 
+export type RunTotals = {
+  values: Record<string, string | number | null>;
+  sum_of_groups: Record<string, string | number | null>;
+  groups: number;
+};
+
 export type RunDetail = RunSummary & {
+  totals?: RunTotals | null;
   recipe: { id: string; name: string; revision: number };
   current_recipe_revision: number | null;
   recipe_changed_since: boolean;
@@ -342,7 +376,7 @@ export type Flow = {
 export type ValueDependency = {
   key: string;
   role: OutputColumn["role"];
-  function?: "sum" | "count";
+  function?: MeasureFunction;
   source?: { alias: string; column: string; input: number } | null;
   stored: string | number | null;
   recomputed?: string | number | null;
@@ -378,7 +412,7 @@ export type ResultDetail = {
   related_exclusions: RelatedExclusions | null;
 };
 
-export type MeasureValue = { measure: string; column: string; raw: string | null; status: "counted" | "ignored_null" | "ignored_unconvertible" };
+export type MeasureValue = { measure: string; column: string; raw: string | null; status: "counted" | "repeated" | "ignored_null" | "ignored_unconvertible" };
 
 export type Contributor = SourceRow & { tuples: number; measure_values: MeasureValue[] };
 

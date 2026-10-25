@@ -10,6 +10,7 @@ import { FieldIcon, TYPE_WORDS } from "./FieldIcon";
 function fieldNote(table: MapTable, column: MapColumn, relations: Relationship[]) {
   const issue = column.issues[0];
   if (issue) return { text: issue.text, tone: issue.kind === "near" ? "pos" : issue.kind === "dup" ? "warn" : "" };
+  if (column.validity) return { text: column.validity === "start" ? "início da vigência" : "fim da vigência", tone: "pos" };
   if (column.role === "key") return { text: "chave", tone: "" };
   const targets = relations.filter((r) => isActive(r) && r.from.dataset_key === table.key && r.from.column === column.key).map((r) => r.to.dataset_key);
   if (targets.length > 1) return { text: `liga a ${targets.join(" ou ")}?`, tone: "pos" };

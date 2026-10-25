@@ -1,5 +1,5 @@
 import { plural } from "@/lib/format";
-import type { ColumnProfile, ColumnType, DatasetSummary, DatasetVersion, Relationship } from "@/lib/types";
+import type { ColumnProfile, ColumnType, DatasetSummary, DatasetVersion, Relationship, ValidityDeclaration } from "@/lib/types";
 
 export type ColumnRole = "key" | "fk" | null;
 
@@ -11,6 +11,7 @@ export type MapColumn = {
   typeReason: string;
   profile: ColumnProfile;
   role: ColumnRole;
+  validity: "start" | "end" | null;
   issues: ColumnIssue[];
   relevant: boolean;
 };
@@ -23,6 +24,7 @@ export type MapTable = {
   versionNumber: number;
   file: string;
   rows: number;
+  validity: ValidityDeclaration | null;
   columns: MapColumn[];
 };
 
@@ -88,15 +90,17 @@ export function buildMapModel(datasets: DatasetSummary[], versions: Record<strin
     const columns = version.columns.map((column) => {
       const role = roleOf(dataset.key, column.key, column.type, column.profile, relations);
       const issues = issuesOf(dataset.key, column.key, role, column.profile, relations);
+      const validity = dataset.validity?.start_column === column.key ? "start" : dataset.validity?.end_column === column.key ? "end" : null;
       return {
         key: column.key,
         type: column.type,
         typeReason: column.profile.type_reason,
         profile: column.profile,
         role,
+        validity,
         issues,
-        relevant: role !== null || issues.length > 0,
-      };
+        relevant: role !== null || issues.length > 0 || validity !== null,
+      } satisfies MapColumn;
     });
     tables.push({
       id: dataset.id,
@@ -106,6 +110,7 @@ export function buildMapModel(datasets: DatasetSummary[], versions: Record<strin
       versionNumber: latest.number,
       file: latest.source_filename,
       rows: latest.row_count,
+      validity: dataset.validity ?? null,
       columns,
     });
   }
