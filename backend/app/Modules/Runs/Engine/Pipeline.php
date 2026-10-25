@@ -31,6 +31,7 @@ final class Pipeline
         $steps = [];
         $results = null;
         $columns = null;
+        $totals = null;
 
         foreach ($snapshot['steps'] as $step) {
             $started = hrtime(true);
@@ -48,7 +49,7 @@ final class Pipeline
                     $excluded = $stats['excluded_by_reason']['no_match'] + $stats['excluded_by_reason']['null_key'];
                     break;
                 case 'aggregate':
-                    [$results, $columns, $stats] = $this->aggregate->apply($context, $step, $alive);
+                    [$results, $columns, $stats, $totals] = $this->aggregate->apply($context, $step, $alive);
                     $outputCount = count($results);
                     $excluded = 0;
                     $alive = [];
@@ -73,7 +74,7 @@ final class Pipeline
             [$results, $columns] = $this->project->apply($context, $alive);
         }
 
-        return new ExecutionOutcome($context->tuples, $context->diagnostics, $steps, $results, $columns);
+        return new ExecutionOutcome($context->tuples, $context->diagnostics, $steps, $results, $columns, $totals);
     }
 
     private function loadRows(string $versionId): array

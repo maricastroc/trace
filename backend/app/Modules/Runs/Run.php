@@ -20,7 +20,7 @@ class Run extends Model
     public const FAILED = 'failed';
 
     protected $fillable = [
-        'workspace_id', 'recipe_id', 'recipe_revision', 'recipe_snapshot', 'status', 'error', 'output_columns',
+        'workspace_id', 'recipe_id', 'recipe_revision', 'recipe_snapshot', 'status', 'error', 'output_columns', 'totals',
         'result_count', 'tuple_count', 'duration_ms', 'queued_at', 'started_at', 'finished_at',
     ];
 
@@ -30,6 +30,7 @@ class Run extends Model
             'recipe_snapshot' => 'array',
             'error' => 'array',
             'output_columns' => 'array',
+            'totals' => 'array',
             'queued_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

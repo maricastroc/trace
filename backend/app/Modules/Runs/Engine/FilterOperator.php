@@ -10,17 +10,20 @@ final class FilterOperator
     {
         $kept = [];
         $byReason = ['condition_false' => 0, 'null_value' => 0, 'unconvertible' => 0];
+        if (collect($step['conditions'])->contains(fn (array $c) => ($c['kind'] ?? null) === 'validity')) {
+            $byReason += [ValidityRule::OUT => 0, ValidityRule::UNDETERMINED => 0];
+        }
         $byCondition = array_fill(0, count($step['conditions']), 0);
 
         foreach ($alive as $tuple) {
             $failure = null;
 
             foreach ($step['conditions'] as $index => $condition) {
-                $raw = $context->value($tuple, $condition['input'], $condition['column']);
-                $reason = self::evaluate($condition, $raw);
+                $failure = ($condition['kind'] ?? null) === 'validity'
+                    ? $this->validityFailure($context, $tuple, $index, $condition)
+                    : $this->comparisonFailure($context, $tuple, $index, $condition);
 
-                if ($reason !== null) {
-                    $failure = [$index, $condition, $raw, $reason];
+                if ($failure !== null) {
                     break;
                 }
             }
@@ -31,25 +34,56 @@ final class FilterOperator
                 continue;
             }
 
-            [$index, $condition, $raw, $reason] = $failure;
+            [$index, $reason, $detail] = $failure;
             $byReason[$reason]++;
             $byCondition[$index]++;
 
-            $context->tuples->exclude($tuple, $step['position'], "filter.{$reason}", [
-                'condition' => $index,
-                'alias' => $condition['alias'],
-                'column' => $condition['column'],
-                'operator' => $condition['operator'],
-                'expected' => $condition['value'],
-                'value_type' => $condition['value_type'],
-                'actual' => $raw,
-                'source_row_id' => $context->tuples->source($tuple, $condition['input']),
-            ]);
+            $context->tuples->exclude($tuple, $step['position'], "filter.{$reason}", $detail);
         }
 
         return [$kept, [
             'excluded_by_reason' => $byReason,
             'excluded_by_condition' => $byCondition,
+        ]];
+    }
+
+    private function comparisonFailure(ExecutionContext $context, int $tuple, int $index, array $condition): ?array
+    {
+        $raw = $context->value($tuple, $condition['input'], $condition['column']);
+        $reason = self::evaluate($condition, $raw);
+
+        return $reason === null ? null : [$index, $reason, [
+            'condition' => $index,
+            'alias' => $condition['alias'],
+            'column' => $condition['column'],
+            'operator' => $condition['operator'],
+            'expected' => $condition['value'],
+            'value_type' => $condition['value_type'],
+            'actual' => $raw,
+            'source_row_id' => $context->tuples->source($tuple, $condition['input']),
+        ]];
+    }
+
+    private function validityFailure(ExecutionContext $context, int $tuple, int $index, array $condition): ?array
+    {
+        $start = $context->value($tuple, $condition['input'], $condition['start_column']);
+        $end = $condition['end_column'] === null ? null : $context->value($tuple, $condition['input'], $condition['end_column']);
+        $outcome = ValidityRule::evaluate($condition, $start, $end);
+
+        return $outcome === null ? null : [$index, $outcome[0], [
+            'condition' => $index,
+            'kind' => 'validity',
+            'alias' => $condition['alias'],
+            'reading' => $condition['reading'],
+            'from' => $condition['from'],
+            'to' => $condition['to'],
+            'start_column' => $condition['start_column'],
+            'end_column' => $condition['end_column'],
+            'end_inclusive' => $condition['end_inclusive'],
+            'start' => $start,
+            'end' => $end,
+            'reason' => $outcome[1],
+            'source_row_id' => $context->tuples->source($tuple, $condition['input']),
         ]];
     }
 

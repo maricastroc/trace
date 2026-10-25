@@ -342,6 +342,35 @@ final class RunLineage
                 continue;
             }
 
+            if ($column['role'] === 'measure' && $column['function'] === 'count_distinct') {
+                $check = $this->distinctCheck($run, $resultNo, $source);
+                $repeated = $check['rows'] - $check['distinct'];
+                $statement = 'Valores diferentes de '."{$source['alias']}.{$source['column']}: ".self::count($check['distinct'], 'valor', 'valores').' em '.self::count($check['rows'], 'registro', 'registros');
+                if ($repeated > 0) {
+                    $statement .= '; '.self::count($repeated, 'registro repete', 'registros repetem').' um valor já contado';
+                }
+                if ($check['nulls'] > 0) {
+                    $statement .= '; '.self::count($check['nulls'], 'vazio foi ignorado', 'vazios foram ignorados');
+                }
+
+                $dependencies[] = [
+                    'key' => $column['key'],
+                    'role' => 'measure',
+                    'function' => 'count_distinct',
+                    'source' => $source,
+                    'stored' => $stored,
+                    'recomputed' => $check['distinct'],
+                    'counted' => $check['distinct'],
+                    'rows' => $check['rows'],
+                    'repeated' => $repeated,
+                    'ignored_null' => $check['nulls'],
+                    'consistent' => (int) $stored === $check['distinct'],
+                    'statement' => $statement.'. Recalculado no banco a partir dos registros originais.',
+                ];
+
+                continue;
+            }
+
             if ($column['role'] === 'measure') {
                 $check = DB::selectOne(
                     'SELECT
@@ -400,6 +429,64 @@ final class RunLineage
         return $dependencies;
     }
 
+    /**
+     * @return array{distinct: int, rows: int, nulls: int}
+     */
+    private function distinctCheck(Run $run, int $resultNo, array $source): array
+    {
+        $check = DB::selectOne(
+            'SELECT count(DISTINCT x.v) AS distinct_values, count(x.v) AS rows, count(*) FILTER (WHERE x.v IS NULL) AS nulls
+             FROM (
+                SELECT r."values"->>? AS v FROM run_tuples t
+                LEFT JOIN run_tuple_sources s ON s.run_id = t.run_id AND s.tuple_no = t.tuple_no AND s.input_position = ?
+                LEFT JOIN source_rows r ON r.id = s.source_row_id
+                WHERE t.run_id = ? AND t.result_no = ?
+             ) x',
+            [$source['column'], $source['input'], $run->id, $resultNo],
+        );
+
+        return ['distinct' => (int) $check->distinct_values, 'rows' => (int) $check->rows, 'nulls' => (int) $check->nulls];
+    }
+
+    public function identities(Run $run, int $resultNo, string $measureKey, Pagination $page): array
+    {
+        $this->result($run, $resultNo);
+        $measure = collect($run->output_columns ?? [])->first(fn (array $c) => $c['key'] === $measureKey && ($c['function'] ?? null) === 'count_distinct');
+        if ($measure === null) {
+            throw new DomainError('run.measure_not_distinct', "A medida {$measureKey} não é uma contagem de valores diferentes.");
+        }
+
+        $source = $measure['source'];
+        $base = 'SELECT r."values"->>? AS v, count(*) AS tuples, count(DISTINCT s.source_row_id) AS source_rows, min(t.tuple_no) AS first_tuple
+            FROM run_tuples t
+            JOIN run_tuple_sources s ON s.run_id = t.run_id AND s.tuple_no = t.tuple_no AND s.input_position = ?
+            JOIN source_rows r ON r.id = s.source_row_id
+            WHERE t.run_id = ? AND t.result_no = ? AND (r."values"->>?) IS NOT NULL
+            GROUP BY 1';
+        $bindings = [$source['column'], $source['input'], $run->id, $resultNo, $source['column']];
+
+        $total = (int) DB::selectOne("SELECT count(*) AS n FROM ({$base}) c", $bindings)->n;
+        $rows = DB::select("SELECT * FROM ({$base}) c ORDER BY c.tuples DESC, c.v LIMIT ? OFFSET ?", [...$bindings, $page->perPage, $page->offset()]);
+        $check = $this->distinctCheck($run, $resultNo, $source);
+
+        return [
+            'data' => array_map(fn (object $row) => [
+                'value' => $row->v,
+                'tuples' => (int) $row->tuples,
+                'source_rows' => (int) $row->source_rows,
+                'repeated' => (int) $row->tuples - 1,
+            ], $rows),
+            'meta' => $page->meta($total) + [
+                'measure' => $measureKey,
+                'source' => $source,
+                'distinct' => $check['distinct'],
+                'rows' => $check['rows'],
+                'repeated' => $check['rows'] - $check['distinct'],
+                'ignored_null' => $check['nulls'],
+            ],
+        ];
+    }
+
     public function fieldRoles(Run $run): array
     {
         $roles = [];
@@ -407,6 +494,17 @@ final class RunLineage
         foreach ($run->steps() as $step) {
             if ($step['type'] === 'filter') {
                 foreach ($step['conditions'] as $condition) {
+                    if (($condition['kind'] ?? null) === 'validity') {
+                        foreach (array_filter([$condition['start_column'], $condition['end_column']]) as $column) {
+                            $roles[$condition['input']][$column][] = [
+                                'kind' => 'condition',
+                                'step_position' => $step['position'],
+                                'description' => 'Define a vigência usada na leitura: '.StepDescriber::condition($condition),
+                            ];
+                        }
+
+                        continue;
+                    }
                     $roles[$condition['input']][$condition['column']][] = [
                         'kind' => 'condition',
                         'step_position' => $step['position'],
@@ -434,11 +532,13 @@ final class RunLineage
                     ];
                 }
                 foreach ($step['measures'] as $measure) {
-                    if ($measure['function'] === 'sum') {
+                    if ($measure['function'] !== 'count') {
                         $roles[$measure['input']][$measure['column']][] = [
                             'kind' => 'value',
                             'step_position' => $step['position'],
-                            'description' => "Valor somado em {$measure['name']}.",
+                            'description' => $measure['function'] === 'sum'
+                                ? "Valor somado em {$measure['name']}."
+                                : "Identidade contada uma vez por valor em {$measure['name']}.",
                         ];
                     }
                 }
@@ -572,20 +672,27 @@ final class RunLineage
 
         $measures = array_values(array_filter(
             $run->output_columns ?? [],
-            fn (array $column) => ($column['function'] ?? null) === 'sum' && $column['source']['input'] === $input,
+            fn (array $column) => in_array($column['function'] ?? null, ['sum', 'count_distinct'], true) && $column['source']['input'] === $input,
         ));
+        $firstRows = $this->firstRowsByIdentity($run, $resultNo, $measures, $rows);
 
         return [
-            'data' => array_map(function (object $row) use ($measures) {
+            'data' => array_map(function (object $row) use ($measures, $firstRows) {
                 $presented = DatasetPresenter::row($row) + ['tuples' => (int) $row->tuples];
-                $presented['measure_values'] = array_map(function (array $measure) use ($presented) {
+                $presented['measure_values'] = array_map(function (array $measure) use ($presented, $firstRows) {
                     $raw = $presented['values'][$measure['source']['column']] ?? null;
+                    $status = match (true) {
+                        $raw === null => 'ignored_null',
+                        $measure['function'] === 'count_distinct' => ($firstRows[$measure['key']][$raw] ?? null) === $presented['id'] ? 'counted' : 'repeated',
+                        ValueParser::number($raw) === null => 'ignored_unconvertible',
+                        default => 'counted',
+                    };
 
                     return [
                         'measure' => $measure['key'],
                         'column' => $measure['source']['column'],
                         'raw' => $raw,
-                        'status' => $raw === null ? 'ignored_null' : (ValueParser::number($raw) === null ? 'ignored_unconvertible' : 'counted'),
+                        'status' => $status,
                     ];
                 }, $measures);
 
@@ -593,6 +700,48 @@ final class RunLineage
             }, $rows),
             'meta' => $page->meta($total) + ['input' => $input, 'alias' => $run->inputs()[$input]['alias']],
         ];
+    }
+
+    /**
+     * @return array<string, array<string, int>>
+     */
+    private function firstRowsByIdentity(Run $run, int $resultNo, array $measures, array $rows): array
+    {
+        $first = [];
+
+        foreach ($measures as $measure) {
+            if ($measure['function'] !== 'count_distinct') {
+                continue;
+            }
+
+            $values = array_values(array_unique(array_filter(array_map(
+                fn (object $row) => json_decode($row->values, true)[$measure['source']['column']] ?? null,
+                $rows,
+            ), fn ($v) => $v !== null)));
+
+            if ($values === []) {
+                continue;
+            }
+
+            $found = DB::select(
+                'SELECT DISTINCT ON (x.v) x.v, x.source_row_id FROM (
+                    SELECT r."values"->>? AS v, s.source_row_id, t.tuple_no
+                    FROM run_tuples t
+                    JOIN run_tuple_sources s ON s.run_id = t.run_id AND s.tuple_no = t.tuple_no AND s.input_position = ?
+                    JOIN source_rows r ON r.id = s.source_row_id
+                    WHERE t.run_id = ? AND t.result_no = ?
+                 ) x
+                 WHERE x.v IN (SELECT jsonb_array_elements_text(?::jsonb))
+                 ORDER BY x.v, x.tuple_no',
+                [$measure['source']['column'], $measure['source']['input'], $run->id, $resultNo, json_encode($values, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)],
+            );
+
+            foreach ($found as $row) {
+                $first[$measure['key']][$row->v] = (int) $row->source_row_id;
+            }
+        }
+
+        return $first;
     }
 
     public function breakdown(Run $run, int $resultNo, int $byInput, Pagination $page): array

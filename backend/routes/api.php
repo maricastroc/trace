@@ -21,6 +21,8 @@ Route::prefix('v1')->group(function () {
         Route::post('imports/preview', [DatasetController::class, 'preview'])->middleware('throttle:uploads');
         Route::get('datasets/{dataset}', [DatasetController::class, 'show']);
         Route::delete('datasets/{dataset}', [DatasetController::class, 'destroy']);
+        Route::put('datasets/{dataset}/validity', [DatasetController::class, 'declareValidity']);
+        Route::delete('datasets/{dataset}/validity', [DatasetController::class, 'clearValidity']);
         Route::post('datasets/{dataset}/versions', [DatasetController::class, 'storeVersion'])->middleware('throttle:uploads');
         Route::get('dataset-versions/{version}', [DatasetVersionController::class, 'show']);
         Route::get('dataset-versions/{version}/rows', [DatasetVersionController::class, 'rows']);
@@ -39,10 +41,12 @@ Route::prefix('v1')->group(function () {
         Route::get('recipes', [RecipeController::class, 'index']);
         Route::post('recipes', [RecipeController::class, 'store']);
         Route::post('recipes/validate', [RecipeController::class, 'validateDraft']);
+        Route::post('recipes/preview', [RecipeController::class, 'previewDraft']);
         Route::get('recipes/{recipe}', [RecipeController::class, 'show']);
         Route::put('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']);
         Route::post('recipes/{recipe}/runs', [RunController::class, 'store']);
+        Route::post('recipes/{recipe}/preview', [RecipeController::class, 'preview']);
 
         Route::get('runs', [RunController::class, 'index']);
         Route::get('runs/{run}', [RunController::class, 'show']);
@@ -52,6 +56,7 @@ Route::prefix('v1')->group(function () {
         Route::get('runs/{run}/results/{resultNo}', [RunController::class, 'result']);
         Route::get('runs/{run}/results/{resultNo}/contributors', [RunController::class, 'contributors']);
         Route::get('runs/{run}/results/{resultNo}/breakdown', [RunController::class, 'breakdown']);
+        Route::get('runs/{run}/results/{resultNo}/identities', [RunController::class, 'identities']);
         Route::get('runs/{run}/exclusions', [RunController::class, 'exclusions']);
         Route::get('runs/{run}/diagnostics', [RunController::class, 'diagnostics']);
         Route::get('runs/{run}/rows', [RunController::class, 'findRows']);

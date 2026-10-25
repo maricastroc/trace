@@ -39,8 +39,18 @@ final class StepDescriber
         };
     }
 
+    public const READINGS = [
+        'started' => 'começou',
+        'active_any' => 'esteve vigente em algum momento',
+        'active_at_end' => 'estava vigente no último dia',
+    ];
+
     public static function condition(array $condition): string
     {
+        if (($condition['kind'] ?? null) === 'validity') {
+            return self::validity($condition);
+        }
+
         $field = "{$condition['alias']}.{$condition['column']}";
         $operator = self::OPERATORS[$condition['operator']] ?? $condition['operator'];
 
@@ -50,6 +60,22 @@ final class StepDescriber
             'in', 'not_in' => "{$field} {$operator} ".implode(', ', array_map(fn ($v) => self::value($v, $condition['value_type']), $condition['value'])),
             default => "{$field} {$operator} ".self::value($condition['value'], $condition['value_type']),
         };
+    }
+
+    public static function validity(array $condition): string
+    {
+        $reading = self::READINGS[$condition['reading']] ?? $condition['reading'];
+        $period = self::date($condition['from']).' a '.self::date($condition['to']);
+        $columns = isset($condition['start_column'])
+            ? ' (vigência por '.$condition['start_column'].($condition['end_column'] ? ' → '.$condition['end_column'] : ', sem coluna de fim').')'
+            : '';
+
+        return "o registro de {$condition['alias']} {$reading} entre {$period}{$columns}";
+    }
+
+    public static function date(string $iso): string
+    {
+        return preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $iso, $m) === 1 ? "{$m[3]}/{$m[2]}/{$m[1]}" : $iso;
     }
 
     public static function value(mixed $value, string $type): string
@@ -73,9 +99,11 @@ final class StepDescriber
     private static function aggregate(array $step): string
     {
         $groups = implode(', ', array_map(fn (array $g) => "{$g['alias']}.{$g['column']}", $step['group_by']));
-        $measures = implode(' · ', array_map(fn (array $m) => $m['function'] === 'count'
-            ? "contar registros como {$m['name']}"
-            : "somar {$m['alias']}.{$m['column']} como {$m['name']}", $step['measures']));
+        $measures = implode(' · ', array_map(fn (array $m) => match ($m['function']) {
+            'count' => "contar registros como {$m['name']}",
+            'count_distinct' => "contar valores diferentes de {$m['alias']}.{$m['column']} como {$m['name']}",
+            default => "somar {$m['alias']}.{$m['column']} como {$m['name']}",
+        }, $step['measures']));
 
         return "Agrupar por {$groups} · {$measures}";
     }

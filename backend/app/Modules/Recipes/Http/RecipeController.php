@@ -5,6 +5,7 @@ namespace App\Modules\Recipes\Http;
 use App\Modules\Recipes\CompiledRecipe;
 use App\Modules\Recipes\Recipe;
 use App\Modules\Recipes\RecipeCompiler;
+use App\Modules\Recipes\RecipePreview;
 use App\Modules\Runs\Run;
 use App\Modules\Runs\RunPresenter;
 use App\Modules\Support\Canonical;
@@ -29,6 +30,18 @@ final class RecipeController
         $compiled = $this->compiler->compile($workspace, $request->input('base_dataset_id'), $request->input('steps', []));
 
         return response()->json(['data' => $this->compiledPayload($compiled)]);
+    }
+
+    public function previewDraft(Request $request, Workspace $workspace, RecipePreview $preview): JsonResponse
+    {
+        return response()->json(['data' => $preview->preview($workspace, $request->input('base_dataset_id'), $request->input('steps', []))]);
+    }
+
+    public function preview(Workspace $workspace, string $recipe, RecipePreview $preview): JsonResponse
+    {
+        $model = $workspace->recipes()->findOrFail($recipe);
+
+        return response()->json(['data' => $preview->preview($workspace, $model->base_dataset_id, $model->steps, $model)]);
     }
 
     public function store(Request $request, Workspace $workspace): JsonResponse

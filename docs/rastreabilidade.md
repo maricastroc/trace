@@ -9,9 +9,9 @@ Contrato inicial para a nova interface. A interface Rio foi removida; o motor, a
 | Como é calculada | `Pipeline::execute($snapshot)` sem `LineageWriter` | `RunExecutor`: `Pipeline::execute` seguido de `LineageWriter::write` (fila `ExecuteRun`) |
 | Grava linhagem | Não | Sim (`run_tuples`, `run_tuple_sources`, `run_diagnostics`) |
 | Pode ser auditada | Não. A interface identifica como prévia e não oferece Explorar nem Auditar | Sim, quando o status é `succeeded` |
-| Endpoint | A criar na Etapa 3 | `POST recipes/{recipe}/runs`, `GET runs/{run}` |
+| Endpoint | `POST recipes/preview` (rascunho) e `POST recipes/{recipe}/preview` | `POST recipes/{recipe}/runs`, `GET runs/{run}` |
 
-As duas usam o mesmo `Pipeline`. A prévia nunca tem regras próprias: ela é a mesma execução, apenas sem gravar a linhagem.
+As duas usam o mesmo `Pipeline`. A prévia nunca tem regras próprias: ela é a mesma execução, apenas sem gravar a linhagem. As definições formais de contagem de distintos, totais e vigência estão em `docs/motor-de-perguntas.md`.
 
 ## Base de uma resposta
 
@@ -31,7 +31,7 @@ Sinais de defasagem já existentes no backend: `newer_version_available` por ent
 |---|---|---|
 | Entender | Qual é o resultado e como foi obtido? | `runs/{run}`, `runs/{run}/results`, `runs/{run}/flows` |
 | Explorar | De onde vem este número? | `runs/{run}/flow?result=`, `runs/{run}/results/{n}`, `runs/{run}/results/{n}/breakdown` |
-| Auditar | Quais linhas exatas entraram, saíram e por quê? | `runs/{run}/results/{n}/contributors`, `runs/{run}/exclusions`, `runs/{run}/diagnostics`, `runs/{run}/rows`, `runs/{run}/rows/{row}/journey`, `dataset-versions/{version}/rows` |
+| Auditar | Quais linhas exatas entraram, saíram e por quê? | `runs/{run}/results/{n}/contributors`, `runs/{run}/results/{n}/identities`, `runs/{run}/exclusions`, `runs/{run}/diagnostics`, `runs/{run}/rows`, `runs/{run}/rows/{row}/journey`, `dataset-versions/{version}/rows` |
 
 Os hooks correspondentes continuam em `frontend/src/lib/queries.ts`. A Rio não deixou nenhum componente visual: as telas novas consomem esses hooks diretamente.
 
@@ -42,7 +42,4 @@ Os hooks correspondentes continuam em `frontend/src/lib/queries.ts`. A Rio não 
 
 ## Lacunas conhecidas
 
-- Não há endpoint de prévia (Etapa 3).
-- O agregado não tem `count distinct`. A definição formal, incluindo quais linhas contam como contribuintes, será escrita antes da implementação (Etapa 3).
-- Leituras de validade (por exemplo, cadastro ativo em uma data) exigem um tipo de condição próprio, com regra formal.
 - Comparações ainda não existem no backend. Quando existirem, usarão a mesma noção de base.

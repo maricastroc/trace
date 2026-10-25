@@ -7,6 +7,7 @@ use App\Modules\Datasets\DatasetVersion;
 use App\Modules\Datasets\Import\ValueParser;
 use App\Modules\Relationships\Relationship;
 use App\Modules\Relationships\RelationshipStanding;
+use App\Modules\Runs\Engine\ValidityRule;
 use App\Modules\Support\Identifier;
 use App\Modules\Workspaces\Workspace;
 
@@ -26,11 +27,15 @@ final class RecipeCompiler
 
     private array $versions = [];
 
+    /** @var array<int, Dataset> */
+    private array $datasets = [];
+
     public function compile(Workspace $workspace, mixed $baseDatasetId, mixed $steps): CompiledRecipe
     {
         $this->issues = [];
         $this->inputs = [];
         $this->versions = [];
+        $this->datasets = [];
 
         $base = is_string($baseDatasetId)
             ? $workspace->datasets()->with('latestVersion.columns')->find($baseDatasetId)
@@ -130,6 +135,10 @@ final class RecipeCompiler
             return null;
         }
 
+        if (($condition['kind'] ?? null) === 'validity') {
+            return $this->validityCondition($condition, $position, $path);
+        }
+
         $ref = $this->reference($condition, $position, $path);
         if ($ref === null) {
             return null;
@@ -175,6 +184,62 @@ final class RecipeCompiler
             'operator' => $operator,
             'value' => $value,
             'value_type' => $valueType,
+        ];
+    }
+
+    private function validityCondition(array $condition, int $position, string $path): ?array
+    {
+        $alias = $condition['alias'] ?? null;
+        $input = is_string($alias) ? $this->inputByAlias($alias) : null;
+
+        if ($input === null) {
+            $this->issue('error', 'ref.alias_unknown', 'O conjunto '.(is_string($alias) ? "\"{$alias}\"" : '').' não está disponível neste passo. Relacione-o antes com uma junção.', $position, "{$path}.alias");
+
+            return null;
+        }
+
+        $reading = $condition['reading'] ?? null;
+        if (! in_array($reading, ValidityRule::READINGS, true)) {
+            $this->issue('error', 'validity.reading_invalid', 'Leitura de vigência inválida. Use started, active_any ou active_at_end.', $position, "{$path}.reading");
+
+            return null;
+        }
+
+        $from = is_string($condition['from'] ?? null) ? ValueParser::date(trim($condition['from'])) : null;
+        $to = is_string($condition['to'] ?? null) ? ValueParser::date(trim($condition['to'])) : null;
+        if ($from === null || $to === null) {
+            $this->issue('error', 'validity.period_invalid', 'Informe o período com duas datas (AAAA-MM-DD ou DD/MM/AAAA).', $position, "{$path}.from");
+
+            return null;
+        }
+        if ($from > $to) {
+            $this->issue('error', 'validity.period_inverted', 'O início do período é posterior ao fim.', $position, "{$path}.from");
+
+            return null;
+        }
+
+        $validity = $this->datasets[$input['position']]->validity();
+        if ($validity === null) {
+            $this->issue('blocker', 'validity.undeclared', "A vigência de {$alias} ainda não foi declarada. Diga quais colunas marcam início e fim antes de perguntar por período.", $position, $path, ['alias' => $alias, 'dataset_id' => $input['dataset_id']]);
+        } else {
+            foreach (array_filter([$validity['start_column'], $validity['end_column']]) as $column) {
+                $type = $this->versions[$input['position']][$column] ?? null;
+                if ($type !== 'date') {
+                    $this->issue('blocker', 'validity.column_unavailable', "A coluna {$alias}.{$column}, declarada na vigência, não existe ou não contém datas na versão atual.", $position, $path, ['alias' => $alias, 'column' => $column]);
+                }
+            }
+        }
+
+        return [
+            'kind' => 'validity',
+            'alias' => $alias,
+            'input' => $input['position'],
+            'reading' => $reading,
+            'from' => $from,
+            'to' => $to,
+            'start_column' => $validity['start_column'] ?? null,
+            'end_column' => $validity['end_column'] ?? null,
+            'end_inclusive' => $validity['end_inclusive'] ?? true,
         ];
     }
 
@@ -312,7 +377,8 @@ final class RecipeCompiler
         }
 
         if ($relationship->status === Relationship::SUGGESTED) {
-            $this->issue('blocker', 'join.relationship_unconfirmed', "O relacionamento {$probeInput['alias']}.{$probeColumn} → {$lookupInput['alias']}.{$lookupColumn} ainda não foi confirmado.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
+            $targetUnique = ($relationship->toDataset->latestVersion?->column($relationship->to_column)?->profile['unique'] ?? false) === true;
+            $this->issue('blocker', 'join.relationship_unconfirmed', "O relacionamento {$probeInput['alias']}.{$probeColumn} → {$lookupInput['alias']}.{$lookupColumn} ainda não foi confirmado.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id, 'target_unique' => $targetUnique]);
         }
 
         if ($relationship->status === Relationship::REJECTED) {
@@ -375,8 +441,8 @@ final class RecipeCompiler
             $measurePath = "{$path}.measures.{$i}";
             $function = is_array($measure) ? ($measure['function'] ?? null) : null;
 
-            if (! in_array($function, ['sum', 'count'], true)) {
-                $this->issue('error', 'aggregate.function_invalid', 'Função inválida. Use sum (soma) ou count (contagem).', $position, "{$measurePath}.function");
+            if (! in_array($function, ['sum', 'count', 'count_distinct'], true)) {
+                $this->issue('error', 'aggregate.function_invalid', 'Função inválida. Use sum (soma), count (contagem de linhas) ou count_distinct (contagem de valores diferentes).', $position, "{$measurePath}.function");
 
                 return null;
             }
@@ -398,6 +464,12 @@ final class RecipeCompiler
             $ref = $this->reference($measure, $position, $measurePath);
             if ($ref === null) {
                 return null;
+            }
+
+            if ($function === 'count_distinct') {
+                $normalized[] = ['function' => 'count_distinct', 'alias' => $ref['alias'], 'column' => $ref['column'], 'input' => $ref['input'], 'name' => $name];
+
+                continue;
             }
 
             if ($ref['type'] !== 'number') {
@@ -436,6 +508,7 @@ final class RecipeCompiler
         $version = $dataset->latestVersion;
         $position = count($this->inputs);
         $this->versions[$position] = $version->columns->pluck('inferred_type', 'key')->all();
+        $this->datasets[$position] = $dataset;
 
         $input = [
             'position' => $position,

@@ -36,7 +36,9 @@ final class CompiledRecipe
         return array_map(function (array $step) {
             return match ($step['type']) {
                 'filter' => ['id' => $step['id'], 'type' => 'filter', 'conditions' => array_map(
-                    fn (array $c) => array_intersect_key($c, array_flip(['alias', 'column', 'operator', 'value', 'value_type'])),
+                    fn (array $c) => ($c['kind'] ?? null) === 'validity'
+                        ? array_intersect_key($c, array_flip(['kind', 'alias', 'reading', 'from', 'to']))
+                        : array_intersect_key($c, array_flip(['alias', 'column', 'operator', 'value', 'value_type'])),
                     $step['conditions'],
                 )],
                 'join' => ['id' => $step['id'], 'type' => 'join', 'relationship_id' => $step['relationship_id'], 'join_type' => $step['join_type']],
@@ -52,10 +54,10 @@ final class CompiledRecipe
         }, $this->steps);
     }
 
-    public function snapshot(Recipe $recipe): array
+    public function snapshot(?Recipe $recipe): array
     {
         return [
-            'recipe' => ['id' => $recipe->id, 'name' => $recipe->name, 'revision' => $recipe->revision],
+            'recipe' => $recipe === null ? null : ['id' => $recipe->id, 'name' => $recipe->name, 'revision' => $recipe->revision],
             'base_dataset_id' => $this->baseDatasetId,
             'inputs' => $this->inputs,
             'steps' => $this->steps,

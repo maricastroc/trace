@@ -46,6 +46,7 @@ final class LineageWriter
             $run->forceFill([
                 'status' => Run::SUCCEEDED,
                 'output_columns' => $outcome->columns,
+                'totals' => $outcome->totals,
                 'result_count' => count($outcome->results),
                 'tuple_count' => $outcome->tuples->count(),
                 'duration_ms' => (int) round((hrtime(true) - $startedAt) / 1e6),

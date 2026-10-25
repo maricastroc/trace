@@ -12,9 +12,13 @@ final class AggregateOperator
         $position = $step['position'];
         $groups = [];
         $ignored = [];
+        $overall = ['sums' => [], 'counted' => [], 'distinct' => []];
 
         foreach ($step['measures'] as $measure) {
             $ignored[$measure['name']] = ['null' => 0, 'unconvertible' => 0];
+            $overall['sums'][$measure['name']] = '0';
+            $overall['counted'][$measure['name']] = 0;
+            $overall['distinct'][$measure['name']] = [];
         }
 
         foreach ($alive as $tuple) {
@@ -25,17 +29,18 @@ final class AggregateOperator
             $groupKey = json_encode($keyValues, JSON_UNESCAPED_UNICODE);
 
             if (! isset($groups[$groupKey])) {
-                $groups[$groupKey] = ['keys' => $keyValues, 'tuples' => [], 'sums' => [], 'counted' => []];
+                $groups[$groupKey] = ['keys' => $keyValues, 'tuples' => [], 'sums' => [], 'counted' => [], 'distinct' => []];
                 foreach ($step['measures'] as $measure) {
                     $groups[$groupKey]['sums'][$measure['name']] = '0';
                     $groups[$groupKey]['counted'][$measure['name']] = 0;
+                    $groups[$groupKey]['distinct'][$measure['name']] = [];
                 }
             }
 
             $groups[$groupKey]['tuples'][] = $tuple;
 
             foreach ($step['measures'] as $measure) {
-                if ($measure['function'] !== 'sum') {
+                if ($measure['function'] === 'count') {
                     continue;
                 }
 
@@ -45,7 +50,15 @@ final class AggregateOperator
 
                 if ($raw === null) {
                     $ignored[$measure['name']]['null']++;
-                    $context->diagnose($position, 'aggregate.null_ignored', 'info', $rowId, $tuple, $detail);
+                    $code = $measure['function'] === 'count_distinct' ? 'aggregate.distinct_null_ignored' : 'aggregate.null_ignored';
+                    $context->diagnose($position, $code, 'info', $rowId, $tuple, $detail);
+
+                    continue;
+                }
+
+                if ($measure['function'] === 'count_distinct') {
+                    $groups[$groupKey]['distinct'][$measure['name']]['v'.$raw] = true;
+                    $overall['distinct'][$measure['name']]['v'.$raw] = true;
 
                     continue;
                 }
@@ -60,6 +73,8 @@ final class AggregateOperator
 
                 $groups[$groupKey]['sums'][$measure['name']] = ValueParser::add($groups[$groupKey]['sums'][$measure['name']], $number);
                 $groups[$groupKey]['counted'][$measure['name']]++;
+                $overall['sums'][$measure['name']] = ValueParser::add($overall['sums'][$measure['name']], $number);
+                $overall['counted'][$measure['name']]++;
             }
         }
 
@@ -78,9 +93,11 @@ final class AggregateOperator
             }
 
             foreach ($step['measures'] as $measure) {
-                $values[$measure['name']] = $measure['function'] === 'count'
-                    ? count($group['tuples'])
-                    : ($group['counted'][$measure['name']] > 0 ? $group['sums'][$measure['name']] : null);
+                $values[$measure['name']] = match ($measure['function']) {
+                    'count' => count($group['tuples']),
+                    'count_distinct' => count($group['distinct'][$measure['name']]),
+                    default => $group['counted'][$measure['name']] > 0 ? $group['sums'][$measure['name']] : null,
+                };
             }
 
             foreach ($group['tuples'] as $tuple) {
@@ -107,9 +124,9 @@ final class AggregateOperator
                 'role' => 'measure',
                 'type' => 'number',
                 'function' => $measure['function'],
-                'source' => $measure['function'] === 'sum'
-                    ? ['alias' => $measure['alias'], 'column' => $measure['column'], 'input' => $measure['input']]
-                    : null,
+                'source' => $measure['function'] === 'count'
+                    ? null
+                    : ['alias' => $measure['alias'], 'column' => $measure['column'], 'input' => $measure['input']],
             ];
         }
 
@@ -117,7 +134,32 @@ final class AggregateOperator
             'groups' => count($results),
             'aggregated_tuples' => count($alive),
             'ignored_values' => $ignored,
-        ]];
+        ], $this->totals($step, $results, $overall, count($alive))];
+    }
+
+    /**
+     * @return array{values: array<string, int|string|null>, sum_of_groups: array<string, int|string|null>, groups: int}
+     */
+    private function totals(array $step, array $results, array $overall, int $tuples): array
+    {
+        $values = [];
+        $sumOfGroups = [];
+
+        foreach ($step['measures'] as $measure) {
+            $name = $measure['name'];
+            $values[$name] = match ($measure['function']) {
+                'count' => $tuples,
+                'count_distinct' => count($overall['distinct'][$name]),
+                default => $overall['counted'][$name] > 0 ? $overall['sums'][$name] : null,
+            };
+
+            $groupValues = array_column(array_column($results, 'values'), $name);
+            $sumOfGroups[$name] = $measure['function'] === 'sum'
+                ? array_reduce(array_filter($groupValues, fn ($v) => $v !== null), fn (?string $carry, string $v) => ValueParser::add($carry ?? '0', $v), null)
+                : array_sum($groupValues);
+        }
+
+        return ['values' => $values, 'sum_of_groups' => $sumOfGroups, 'groups' => count($results)];
     }
 
     private function compareKeys(array $a, array $b, array $types, ?Collator $collator): int

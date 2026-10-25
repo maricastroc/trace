@@ -34,6 +34,7 @@ final class RunPresenter
             ], $inputs),
             'steps' => $steps,
             'output_columns' => $run->output_columns,
+            'totals' => $run->totals,
         ];
     }
 }

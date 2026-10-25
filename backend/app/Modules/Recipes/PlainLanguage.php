@@ -40,15 +40,39 @@ final class PlainLanguage
         ))));
         $subject = $foreign === [] ? $base : "{$base} de ".implode(' e ', $foreign);
         $single = count($step['conditions']) === 1 ? $step['conditions'][0] : null;
+        $validity = collect($step['conditions'])->first(fn (array $c) => ($c['kind'] ?? null) === 'validity');
+        $extra = $validity === null ? [] : [
+            'validity_out' => 'fora do período pela leitura escolhida',
+            'validity_undetermined' => 'vigência impossível de determinar',
+        ];
+
+        if ($single !== null && $validity !== null) {
+            return [
+                'headline' => "Mantém {$subject} que ".self::validityPhrase($validity),
+                'drops' => $extra,
+            ];
+        }
 
         return [
             'headline' => "Mantém {$subject} com ".implode(' e ', $phrases),
-            'drops' => [
+            'drops' => $extra + [
                 'condition_false' => $single ? self::reject($single, $inputs) : 'não atendem a todas as condições',
                 'null_value' => $single ? 'sem '.self::column($single, $inputs) : 'valor vazio',
                 'unconvertible' => $single ? self::column($single, $inputs).($single['value_type'] === 'date' ? ' não é uma data válida' : ' não é um número') : 'valor fora do formato',
             ],
         ];
+    }
+
+    private static function validityPhrase(array $c): string
+    {
+        $from = self::value($c['from'], 'date');
+        $to = self::value($c['to'], 'date');
+
+        return match ($c['reading']) {
+            'started' => "começaram de {$from} a {$to}",
+            'active_any' => "estiveram vigentes em algum momento de {$from} a {$to}",
+            default => "estavam vigentes em {$to}",
+        };
     }
 
     private static function join(array $step, array $inputs): array
@@ -73,16 +97,27 @@ final class PlainLanguage
         $groups = implode(' e ', array_map(fn (array $g) => self::columnLabel($inputs, $g['input'], $g['column']), $step['group_by']));
         $sums = array_values(array_filter($step['measures'], fn (array $m) => $m['function'] === 'sum'));
         $counts = array_filter($step['measures'], fn (array $m) => $m['function'] === 'count');
-        $sumText = $sums === []
-            ? ''
-            : 'Soma '.implode(' e ', array_map(fn (array $m) => self::columnLabel($inputs, $m['input'], $m['column']), $sums));
-        $headline = $sumText === '' ? "Conta os registros por {$groups}" : "{$sumText} por {$groups}".($counts === [] ? '' : ' e conta os registros');
+        $distinct = array_values(array_filter($step['measures'], fn (array $m) => $m['function'] === 'count_distinct'));
+        $parts = [];
+        if ($sums !== []) {
+            $parts[] = 'Soma '.implode(' e ', array_map(fn (array $m) => self::columnLabel($inputs, $m['input'], $m['column']), $sums));
+        }
+        if ($distinct !== []) {
+            $parts[] = ($parts === [] ? 'Conta' : 'conta').' valores diferentes de '.implode(' e ', array_map(fn (array $m) => self::columnLabel($inputs, $m['input'], $m['column']), $distinct));
+        }
+        $headline = $parts === []
+            ? "Conta os registros por {$groups}"
+            : implode(' e ', $parts)." por {$groups}".($counts === [] ? '' : ' e conta os registros');
 
         return ['headline' => $headline, 'drops' => []];
     }
 
     private static function keep(array $c, array $inputs): string
     {
+        if (($c['kind'] ?? null) === 'validity') {
+            return 'vigência de quem '.self::validityPhrase($c);
+        }
+
         $column = self::column($c, $inputs);
         $value = fn (mixed $v) => self::value($v, $c['value_type']);
 

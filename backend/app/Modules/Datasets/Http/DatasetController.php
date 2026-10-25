@@ -63,6 +63,54 @@ final class DatasetController
         return response()->json(['data' => DatasetPresenter::detail($model)], 201);
     }
 
+    public function declareValidity(Request $request, Workspace $workspace, string $dataset): JsonResponse
+    {
+        $model = $workspace->datasets()->with('latestVersion.columns', 'versions')->findOrFail($dataset);
+        $data = $request->validate([
+            'start_column' => ['required', 'string'],
+            'end_column' => ['nullable', 'string', 'different:start_column'],
+            'end_inclusive' => ['required', 'boolean'],
+        ], [
+            'start_column.required' => 'Escolha a coluna que marca o início da vigência.',
+            'end_column.different' => 'Início e fim da vigência precisam ser colunas diferentes.',
+            'end_inclusive.required' => 'Diga se o dia do fim ainda conta como vigente.',
+        ]);
+
+        $version = $model->latestVersion ?? throw new DomainError('dataset.no_version', "O conjunto {$model->key} não possui versões.");
+        foreach (['start_column' => 'início', 'end_column' => 'fim'] as $field => $label) {
+            $key = $data[$field] ?? null;
+            if ($key === null) {
+                continue;
+            }
+            $column = $version->column($key) ?? throw new DomainError('dataset.column_unknown', "A coluna {$key} não existe nesta versão.", 422, ['field' => $field]);
+            if ($column->inferred_type !== 'date') {
+                throw new DomainError('dataset.validity_not_date', "A coluna de {$label} da vigência precisa conter datas; {$key} não contém.", 422, ['field' => $field]);
+            }
+        }
+
+        $model->fill([
+            'validity_start_column' => $data['start_column'],
+            'validity_end_column' => $data['end_column'] ?? null,
+            'validity_end_inclusive' => (bool) $data['end_inclusive'],
+            'validity_declared_at' => now(),
+        ])->save();
+
+        return response()->json(['data' => DatasetPresenter::detail($model)]);
+    }
+
+    public function clearValidity(Workspace $workspace, string $dataset): JsonResponse
+    {
+        $model = $workspace->datasets()->with('latestVersion.columns', 'versions')->findOrFail($dataset);
+        $model->fill([
+            'validity_start_column' => null,
+            'validity_end_column' => null,
+            'validity_end_inclusive' => null,
+            'validity_declared_at' => null,
+        ])->save();
+
+        return response()->json(['data' => DatasetPresenter::detail($model)]);
+    }
+
     public function destroy(Workspace $workspace, string $dataset): JsonResponse
     {
         $model = $workspace->datasets()->with('versions')->findOrFail($dataset);

@@ -55,7 +55,18 @@ final class RunController
 
         return response()->json($this->lineage->results($model, Pagination::fromRequest($request, 50, 200)) + [
             'columns' => $model->output_columns,
+            'totals' => $model->totals,
         ]);
+    }
+
+    public function identities(Request $request, Workspace $workspace, string $run, int $resultNo): JsonResponse
+    {
+        return response()->json($this->lineage->identities(
+            $this->ready($workspace, $run),
+            $resultNo,
+            (string) $request->query('measure', ''),
+            Pagination::fromRequest($request),
+        ));
     }
 
     public function flow(Request $request, Workspace $workspace, string $run): JsonResponse

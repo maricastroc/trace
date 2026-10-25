@@ -17,6 +17,7 @@ final class DatasetPresenter
             'created_at' => $dataset->created_at?->toIso8601String(),
             'updated_at' => $dataset->updated_at?->toIso8601String(),
             'latest_version' => $latest ? self::versionSummary($latest) : null,
+            'validity' => $dataset->validity(),
         ];
     }
 
