@@ -2,9 +2,12 @@
 
 namespace App\Modules\Workspaces\Http;
 
+use App\Modules\Workspaces\DemoScenarios;
 use App\Modules\Workspaces\Workspace;
 use App\Modules\Workspaces\WorkspaceProvisioner;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class WorkspaceController
 {
@@ -22,13 +25,22 @@ final class WorkspaceController
                 'tuples' => (int) config('trace.limits.tuples'),
             ],
             'workspace_ttl_days' => (int) config('trace.workspace_ttl_days'),
+            'scenarios' => DemoScenarios::summaries(),
+            'default_scenario' => DemoScenarios::DEFAULT,
             'demo_notice' => 'Os dados de demonstração são sintéticos, criados para ilustrar o Trace. Não são dados oficiais de nenhum programa.',
         ]]);
     }
 
-    public function store(WorkspaceProvisioner $provisioner): JsonResponse
+    public function store(Request $request, WorkspaceProvisioner $provisioner): JsonResponse
     {
-        [$workspace, $token] = $provisioner->create();
+        $data = $request->validate([
+            'scenario' => ['nullable', 'string', Rule::in(array_keys(DemoScenarios::all()))],
+        ], [
+            'scenario.in' => 'Cenário de demonstração desconhecido.',
+            'scenario.string' => 'Cenário de demonstração desconhecido.',
+        ]);
+
+        [$workspace, $token] = $provisioner->create(true, $data['scenario'] ?? DemoScenarios::DEFAULT);
 
         return response()->json(['data' => $this->present($workspace) + ['token' => $token]], 201);
     }
@@ -43,6 +55,7 @@ final class WorkspaceController
         return [
             'id' => $workspace->id,
             'name' => $workspace->name,
+            'scenario' => DemoScenarios::summary($workspace->scenario),
             'created_at' => $workspace->created_at?->toIso8601String(),
             'counts' => [
                 'datasets' => $workspace->datasets()->count(),

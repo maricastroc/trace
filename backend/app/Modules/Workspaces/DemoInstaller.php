@@ -2,6 +2,7 @@
 
 namespace App\Modules\Workspaces;
 
+use App\Modules\Datasets\DatasetVersion;
 use App\Modules\Datasets\Import\CsvImporter;
 use App\Modules\Recipes\RecipeCompiler;
 use App\Modules\Relationships\Relationship;
@@ -18,57 +19,74 @@ final class DemoInstaller
         private readonly RecipeCompiler $compiler,
     ) {}
 
-    public function install(Workspace $workspace): void
+    public function install(Workspace $workspace, string $scenario = DemoScenarios::DEFAULT): void
     {
-        DB::transaction(function () use ($workspace) {
-            $path = config('trace.demo_path');
+        DB::transaction(function () use ($workspace, $scenario) {
+            $versions = $this->importDatasets($workspace, $scenario);
 
-            $cozinhas = $this->importer->importFile($workspace, "{$path}/cozinhas.csv", 'cozinhas.csv', null, [
-                'key' => 'cozinhas',
-                'name' => 'Cozinhas',
-                'origin' => 'demo',
-                'is_synthetic' => true,
-            ]);
+            if ($scenario === 'refeicoes') {
+                $this->installMealsRecipe($workspace, $versions['cozinhas'], $versions['refeicoes']);
 
-            $refeicoes = $this->importer->importFile($workspace, "{$path}/refeicoes.csv", 'refeicoes.csv', null, [
-                'key' => 'refeicoes',
-                'name' => 'Refeições',
-                'origin' => 'demo',
-                'is_synthetic' => true,
-            ]);
+                return;
+            }
 
-            $relationship = $this->discovery->discover($workspace)->first(
-                fn (Relationship $r) => $r->from_dataset_id === $refeicoes->dataset_id
-                    && $r->from_column === 'cozinha_id'
-                    && $r->to_dataset_id === $cozinhas->dataset_id
-                    && $r->to_column === 'id',
-            );
-
-            $steps = [
-                ['id' => 'setembro', 'type' => 'filter', 'conditions' => [
-                    ['alias' => 'refeicoes', 'column' => 'data', 'operator' => 'between', 'value' => ['2026-09-01', '2026-09-30'], 'value_type' => 'date'],
-                ]],
-                ['id' => 'cozinhas', 'type' => 'join', 'relationship_id' => $relationship?->id, 'join_type' => 'inner'],
-                ['id' => 'ativas', 'type' => 'filter', 'conditions' => [
-                    ['alias' => 'cozinhas', 'column' => 'status', 'operator' => 'eq', 'value' => 'ativa', 'value_type' => 'text'],
-                ]],
-                ['id' => 'por_municipio', 'type' => 'aggregate', 'group_by' => [
-                    ['alias' => 'cozinhas', 'column' => 'municipio'],
-                ], 'measures' => [
-                    ['function' => 'sum', 'alias' => 'refeicoes', 'column' => 'quantidade', 'name' => 'total_refeicoes'],
-                    ['function' => 'count', 'name' => 'registros'],
-                ]],
-            ];
-
-            $compiled = $this->compiler->compile($workspace, $refeicoes->dataset_id, $steps);
-
-            $workspace->recipes()->create([
-                'name' => self::RECIPE_NAME,
-                'description' => 'Mantém refeições de setembro, relaciona cada uma à sua cozinha, mantém apenas cozinhas ativas e soma as refeições por município.',
-                'base_dataset_id' => $refeicoes->dataset_id,
-                'steps' => $compiled->isSavable() ? $compiled->storableSteps() : $steps,
-                'revision' => 1,
-            ]);
+            $this->discovery->discover($workspace);
         });
+    }
+
+    /**
+     * @return array<string, DatasetVersion>
+     */
+    private function importDatasets(Workspace $workspace, string $scenario): array
+    {
+        $path = config('trace.demo_path');
+        $versions = [];
+
+        foreach (DemoScenarios::all()[$scenario]['datasets'] as $dataset) {
+            $versions[$dataset['key']] = $this->importer->importFile($workspace, "{$path}/{$dataset['file']}", basename($dataset['file']), null, [
+                'key' => $dataset['key'],
+                'name' => $dataset['name'],
+                'origin' => 'demo',
+                'is_synthetic' => true,
+            ]);
+        }
+
+        return $versions;
+    }
+
+    private function installMealsRecipe(Workspace $workspace, DatasetVersion $cozinhas, DatasetVersion $refeicoes): void
+    {
+        $relationship = $this->discovery->discover($workspace)->first(
+            fn (Relationship $r) => $r->from_dataset_id === $refeicoes->dataset_id
+                && $r->from_column === 'cozinha_id'
+                && $r->to_dataset_id === $cozinhas->dataset_id
+                && $r->to_column === 'id',
+        );
+
+        $steps = [
+            ['id' => 'setembro', 'type' => 'filter', 'conditions' => [
+                ['alias' => 'refeicoes', 'column' => 'data', 'operator' => 'between', 'value' => ['2026-09-01', '2026-09-30'], 'value_type' => 'date'],
+            ]],
+            ['id' => 'cozinhas', 'type' => 'join', 'relationship_id' => $relationship?->id, 'join_type' => 'inner'],
+            ['id' => 'ativas', 'type' => 'filter', 'conditions' => [
+                ['alias' => 'cozinhas', 'column' => 'status', 'operator' => 'eq', 'value' => 'ativa', 'value_type' => 'text'],
+            ]],
+            ['id' => 'por_municipio', 'type' => 'aggregate', 'group_by' => [
+                ['alias' => 'cozinhas', 'column' => 'municipio'],
+            ], 'measures' => [
+                ['function' => 'sum', 'alias' => 'refeicoes', 'column' => 'quantidade', 'name' => 'total_refeicoes'],
+                ['function' => 'count', 'name' => 'registros'],
+            ]],
+        ];
+
+        $compiled = $this->compiler->compile($workspace, $refeicoes->dataset_id, $steps);
+
+        $workspace->recipes()->create([
+            'name' => self::RECIPE_NAME,
+            'description' => 'Mantém refeições de setembro, relaciona cada uma à sua cozinha, mantém apenas cozinhas ativas e soma as refeições por município.',
+            'base_dataset_id' => $refeicoes->dataset_id,
+            'steps' => $compiled->isSavable() ? $compiled->storableSteps() : $steps,
+            'revision' => 1,
+        ]);
     }
 }

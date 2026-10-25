@@ -14,7 +14,7 @@ class Workspace extends Model
 {
     use HasUlids;
 
-    protected $fillable = ['name', 'token_hash', 'last_active_at'];
+    protected $fillable = ['name', 'scenario', 'token_hash', 'last_active_at'];
 
     protected $hidden = ['token_hash'];
 

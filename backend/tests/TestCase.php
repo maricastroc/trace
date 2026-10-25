@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Modules\Workspaces\DemoScenarios;
 use App\Modules\Workspaces\Http\ResolveWorkspace;
 use App\Modules\Workspaces\Workspace;
 use App\Modules\Workspaces\WorkspaceProvisioner;
@@ -18,9 +19,9 @@ abstract class TestCase extends BaseTestCase
         Storage::fake('local');
     }
 
-    protected function workspace(bool $withDemo = true): array
+    protected function workspace(bool $withDemo = true, string $scenario = DemoScenarios::DEFAULT): array
     {
-        [$workspace, $token] = app(WorkspaceProvisioner::class)->create($withDemo);
+        [$workspace, $token] = app(WorkspaceProvisioner::class)->create($withDemo, $scenario);
 
         return [$workspace, $token];
     }
