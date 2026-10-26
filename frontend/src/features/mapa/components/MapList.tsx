@@ -12,12 +12,13 @@ type Props = {
   model: MapModel;
   discovering: boolean;
   onDiscover: () => void;
+  onImport: () => void;
   onSelectRelation: (id: string) => void;
   onOpenTable: (key: string) => void;
   onOpenField: (key: string, column: string) => void;
 };
 
-export function MapList({ model, discovering, onDiscover, onSelectRelation, onOpenTable, onOpenField }: Props) {
+export function MapList({ model, discovering, onDiscover, onImport, onSelectRelation, onOpenTable, onOpenField }: Props) {
   const ordered = [...model.tables].sort((a, b) => b.rows - a.rows);
   const allFields = showsAllFields(model.tables);
   return (
@@ -25,9 +26,14 @@ export function MapList({ model, discovering, onDiscover, onSelectRelation, onOp
       <p className="eyebrow eyebrow-ab">Mapa · {plural(model.tables.length, "tabela", "tabelas")}</p>
       <h1>Como seus dados se conectam</h1>
       <p className="map-summary">{relationsSummary(model.relations)}.</p>
-      <button type="button" className="btn-link map-discover" onClick={onDiscover} disabled={discovering}>
-        {discovering ? "Procurando relações…" : "Procurar relações de novo"}
-      </button>
+      <div className="map-actions">
+        <button type="button" className="btn-link" onClick={onImport}>
+          Importar CSV
+        </button>
+        <button type="button" className="btn-link map-discover" onClick={onDiscover} disabled={discovering}>
+          {discovering ? "Procurando relações…" : "Procurar relações de novo"}
+        </button>
+      </div>
       {ordered.map((table) => (
         <div key={table.key} className="grid gap-3">
           <TableSheet

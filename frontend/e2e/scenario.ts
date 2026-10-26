@@ -59,6 +59,23 @@ export async function workspaceApi(page: Page, request: APIRequestContext, scena
   return {
     relations,
     find,
+    async removeQuestions() {
+      const recipes = (await call<{ data: { id: string; question: unknown }[] }>("GET", "/recipes")).data;
+      for (const recipe of recipes.filter((r) => r.question !== null)) await request.fetch(`${API_URL}/recipes/${recipe.id}`, { method: "DELETE", headers });
+    },
+    async declareValidity(key: string, inclusive: boolean) {
+      const dataset = (await datasets()).find((d) => d.key === key)!;
+      const response = await request.fetch(`${API_URL}/datasets/${dataset.id}/validity`, {
+        method: "PUT",
+        headers,
+        data: { start_column: "data_cadastro", end_column: "data_desligamento", end_inclusive: inclusive },
+      });
+      expect(response.ok()).toBe(true);
+    },
+    async removeDataset(key: string) {
+      const dataset = (await datasets()).find((d) => d.key === key);
+      if (dataset) await request.fetch(`${API_URL}/datasets/${dataset.id}`, { method: "DELETE", headers });
+    },
     async clearValidity(key: string) {
       const dataset = (await datasets()).find((d) => d.key === key)!;
       await call("DELETE", `/datasets/${dataset.id}/validity`);

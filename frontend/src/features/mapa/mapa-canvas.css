@@ -822,17 +822,6 @@
   font-size: 14px;
 }
 
-.mapa .select {
-  height: 38px;
-  border-radius: 8px;
-  border: 1px solid var(--rule-2);
-  background: var(--sheet);
-  padding: 0 8px;
-  font: 500 13.5px var(--f-mono);
-  color: var(--ink);
-  max-width: 100%;
-}
-
 .mapa .path-opt {
   display: grid;
   gap: 6px;

@@ -66,3 +66,22 @@ export function query(params: Record<string, string | number | null | undefined>
   const text = search.toString();
   return text ? `?${text}` : "";
 }
+
+export async function upload<T>(path: string, form: FormData, token: string | null): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers[WORKSPACE_HEADER] = token;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { method: "POST", headers, body: form });
+  } catch {
+    throw new ApiError(`Não foi possível conectar à API do Trace em ${API_URL}.`, 0, "network.unreachable");
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const first = payload?.errors ? (Object.values(payload.errors as Record<string, string[]>)[0]?.[0] ?? null) : null;
+    throw new ApiError(first ?? payload?.message ?? `A API respondeu com o status ${response.status}.`, response.status, payload?.code ?? (payload?.errors ? "validation" : "http_error"), payload?.details ?? payload?.errors ?? {});
+  }
+  return payload as T;
+}

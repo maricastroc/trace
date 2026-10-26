@@ -6,13 +6,6 @@
   color: var(--ink-3);
 }
 
-.mapa .small-note {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--ink-2);
-}
-
 .mapa .panel-actions {
   display: flex;
   flex-wrap: wrap;
@@ -413,22 +406,6 @@
   border-left: 0;
 }
 
-.mapa .fix-box {
-  border: 1px dashed var(--rule-2);
-  border-radius: 12px;
-  padding: 14px;
-  display: grid;
-  gap: 10px;
-}
-
-.mapa .fix-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  font: 13px var(--f-mono);
-}
-
 .mapa .fix-res {
   display: grid;
   gap: 2px;
@@ -440,93 +417,6 @@
   width: 100%;
   height: auto;
   display: block;
-}
-
-.mapa .rt-wrap {
-  border: 1px solid var(--rule);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--sheet);
-}
-
-.mapa .rt-scroll {
-  max-height: 420px;
-  overflow: auto;
-}
-
-.mapa table.rt {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.mapa .rt th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--sheet);
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--rule-2);
-  white-space: nowrap;
-  font: 500 11.5px/1 var(--f-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-.mapa .rt td {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--rule);
-  vertical-align: top;
-  font: 13.5px/1.4 var(--f-mono);
-  white-space: nowrap;
-}
-
-.mapa .rt td.empty {
-  color: var(--ink-3);
-}
-
-.mapa .rt tbody tr.clickable {
-  cursor: pointer;
-}
-
-.mapa .rt tbody tr.clickable:hover,
-.mapa .rt tbody tr.clickable:focus-visible {
-  background: var(--paper);
-}
-
-.mapa .rt-foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  font-size: 13.5px;
-  color: var(--ink-2);
-  border-top: 1px solid var(--rule);
-  background: var(--paper);
-}
-
-.mapa .rt-foot .btn {
-  min-height: 32px;
-  padding: 0 10px;
-  font-size: 13.5px;
-}
-
-.mapa .state-pill-caveat {
-  color: #fff;
-  background: var(--ab);
-  box-shadow: 3px -3px 0 0 var(--b);
-}
-
-.mapa .state-pill-review {
-  color: var(--b-deep);
-  background: var(--b-wash);
-  outline: 1.5px solid var(--b);
-  outline-offset: -1.5px;
 }
 
 .mapa .rel-effect {
@@ -562,6 +452,82 @@
   font-family: var(--f-mono);
 }
 
-.mapa .rt tbody tr[aria-selected="true"] {
-  background: var(--a-wash);
+
+.mapa .import-drop {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  border: 1.5px dashed var(--rule-2);
+  border-radius: 14px;
+  padding: 18px;
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.mapa .import-drop b {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.mapa .import-drop span {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.mapa .import-drop:hover,
+.mapa .import-drop.dragging {
+  border-color: var(--ab);
+  background: var(--ab-wash);
+}
+
+.mapa .import-drop:has(+ input:focus-visible) {
+  outline: 2px solid var(--a-deep);
+  outline-offset: 2px;
+}
+
+.mapa .import-drop .import-pick {
+  margin-top: 6px;
+  color: var(--ink);
+}
+
+.mapa .import-input {
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--rule-2);
+  background: var(--sheet);
+  padding: 0 10px;
+  font: 500 15px var(--f-ui);
+  color: var(--ink);
+}
+
+.mapa .import-warnings {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--b-deep);
+}
+
+.mapa .map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: baseline;
+}
+
+.mapa .map-actions .btn-link {
+  font-size: 14px;
+}
+
+.mapa .btn-danger {
+  background: var(--b-deep);
+  border-color: var(--b-deep);
+  color: #fff;
+}
+
+.mapa .btn-danger:hover {
+  background: #9a0f4f;
+  border-color: #9a0f4f;
 }

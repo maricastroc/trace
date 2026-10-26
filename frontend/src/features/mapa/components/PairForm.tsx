@@ -31,13 +31,24 @@ type Props = {
   onDone: (relationId: string) => void;
 };
 
+function guessTarget<T extends { table: MapTable; column: string }>(targets: T[], fromColumn: string) {
+  const column = fromColumn.toLowerCase();
+  const stem = column.replace(/_id$/, "").replace(/^id_/, "");
+  if (stem && stem !== column) {
+    const named = targets.find((target) => target.column === "id" && [stem, `${stem}s`, `${stem}es`].includes(target.table.key.toLowerCase()));
+    if (named) return named;
+  }
+  return targets[0] ?? null;
+}
+
 export function PairForm({ model, fromTable, fromColumn, initialTo, correcting, onDone }: Props) {
   const id = useId();
   const toast = useToast();
   const candidates = (table: MapTable) => table.columns.filter((c) => c.type !== "date");
   const targets = model.tables.filter((t) => t.key !== fromTable.key).flatMap((t) => candidates(t).map((c) => ({ table: t, column: c.key })));
   const [from, setFrom] = useState(fromColumn);
-  const [to, setTo] = useState(initialTo ? `${initialTo.table}.${initialTo.column}` : targets[0] ? `${targets[0].table.key}.${targets[0].column}` : "");
+  const guess = guessTarget(targets, fromColumn);
+  const [to, setTo] = useState(initialTo ? `${initialTo.table}.${initialTo.column}` : guess ? `${guess.table.key}.${guess.column}` : "");
   const target = targets.find((t) => `${t.table.key}.${t.column}` === to) ?? null;
   const pair: RelationshipPair | null = target ? { from_dataset_id: fromTable.id, from_column: from, to_dataset_id: target.table.id, to_column: target.column } : null;
   const draft = useRelationshipDraft(pair);

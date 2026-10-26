@@ -48,6 +48,7 @@ type Props = {
   panelOpen: boolean;
   discovering: boolean;
   onDiscover: () => void;
+  onImport: () => void;
   onSelectRelation: (id: string) => void;
   onOpenTable: (key: string) => void;
   onOpenField: (key: string, column: string) => void;
@@ -85,7 +86,7 @@ function relationAria(r: Relationship) {
   return `Relação ${relationLabel(r)}: ${STATE_WORDS[standingOf(r)]}, cobertura ${formatPercent(r.evidence.match.match_ratio)}, ${extra}. Abrir evidência.`;
 }
 
-export function MapCanvas({ model, selection, focusTable, panelOpen, discovering, onDiscover, onSelectRelation, onOpenTable, onOpenField, onFocusTable, onBackground, onClearAll }: Props) {
+export function MapCanvas({ model, selection, focusTable, panelOpen, discovering, onDiscover, onImport, onSelectRelation, onOpenTable, onOpenField, onFocusTable, onBackground, onClearAll }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
@@ -589,7 +590,7 @@ export function MapCanvas({ model, selection, focusTable, panelOpen, discovering
         )}
       </div>
 
-      <MapStatus ref={statusRef} model={model} hidden={mode === "paths"} discovering={discovering} onDiscover={onDiscover} />
+      <MapStatus ref={statusRef} model={model} hidden={mode === "paths"} discovering={discovering} onDiscover={onDiscover} onImport={onImport} />
       {mode === "paths" && <PathsCard ref={cardRef} model={model} state={pathState} onChange={setPathState} />}
       <MapTools
         mode={mode}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatCount, formatPercent, plural } from "@/lib/format";
-import { useClearValidity, useDeclareValidity, useRowsWhere, useVersionRows } from "@/lib/queries";
+import { useDeleteDataset, useRowsWhere, useVersionRows } from "@/lib/queries";
 import { useToast } from "@/components/ui/Toast";
 import type { Relationship } from "@/lib/types";
 import { StatePill } from "@/components/ui/StatePill";
@@ -11,6 +11,7 @@ import { standingOf, type MapColumn, type MapModel, type MapTable } from "../mod
 import { TYPE_WORDS } from "./FieldIcon";
 import { PairForm } from "./PairForm";
 import { RecordTable } from "./RecordTable";
+import { ValidityForm } from "@/features/shared/ValidityForm";
 
 export type OpenRecord = (table: string, rowId: number, values: Record<string, string | null>, line: number) => void;
 
@@ -51,116 +52,6 @@ function RelationLinks({ relations, onSelectRelation }: { relations: Relationshi
   );
 }
 
-function ValiditySection({ table }: { table: MapTable }) {
-  const declare = useDeclareValidity();
-  const clear = useClearValidity();
-  const toast = useToast();
-  const dates = table.columns.filter((c) => c.type === "date");
-  const [start, setStart] = useState(dates[0]?.key ?? "");
-  const [end, setEnd] = useState(dates.find((c) => c.key !== dates[0]?.key)?.key ?? "");
-  const [inclusive, setInclusive] = useState<boolean | null>(null);
-  const failure = declare.error ?? clear.error;
-
-  if (table.validity) {
-    const v = table.validity;
-    return (
-      <div className="grid gap-3">
-        <p className="m-0 text-[15px] leading-relaxed">
-          <b className="font-mono">{v.start_column}</b> marca o início
-          {v.end_column ? (
-            <>
-              {" "}
-              e <b className="font-mono">{v.end_column}</b> o fim; o dia do fim {v.end_inclusive ? "ainda conta" : "já não conta"} como vigente. Fim vazio significa ainda vigente.
-            </>
-          ) : (
-            "; não há coluna de fim, então todo registro fica vigente a partir do início."
-          )}
-        </p>
-        <p className="small-note">Perguntas por período usam esta declaração: começaram no período, ativos em algum momento ou ativos no último dia.</p>
-        <button
-          type="button"
-          className="btn btn-quiet justify-self-start"
-          disabled={clear.isPending}
-          onClick={() => clear.mutate(table.id, { onSuccess: () => toast(`Vigência de ${table.key} removida.`) })}
-        >
-          Remover declaração
-        </button>
-        {failure && (
-          <p role="alert" className="small-note text-b-deep">
-            {failure.message}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (dates.length === 0) return <p className="small-note">Esta tabela não tem colunas de data, então não há vigência para declarar.</p>;
-
-  const needsChoice = end !== "";
-  const ready = start !== "" && (!needsChoice || inclusive !== null);
-  return (
-    <div className="fix-box">
-      <p className="small-note">Declare só se essas colunas marcam quando cada registro começou e deixou de valer. O Trace não deduz isso sozinho.</p>
-      <div className="fix-row">
-        <label className="grid gap-1">
-          <span className="eyebrow">início</span>
-          <select className="select" value={start} onChange={(event) => setStart(event.target.value)}>
-            {dates.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.key}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1">
-          <span className="eyebrow">fim</span>
-          <select className="select" value={end} onChange={(event) => setEnd(event.target.value)}>
-            <option value="">sem coluna de fim</option>
-            {dates
-              .filter((c) => c.key !== start)
-              .map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.key}
-                </option>
-              ))}
-          </select>
-        </label>
-      </div>
-      {needsChoice && (
-        <fieldset className="m-0 grid gap-1 border-0 p-0">
-          <legend className="mb-1 text-[14.5px] font-semibold">O dia do fim ainda conta como vigente?</legend>
-          <label className="flex items-center gap-2 text-[14.5px]">
-            <input type="radio" name={`fim-${table.key}`} checked={inclusive === true} onChange={() => setInclusive(true)} />
-            Sim: quem tem fim em 31/12 ainda estava vigente em 31/12
-          </label>
-          <label className="flex items-center gap-2 text-[14.5px]">
-            <input type="radio" name={`fim-${table.key}`} checked={inclusive === false} onChange={() => setInclusive(false)} />
-            Não: no dia do fim o registro já não vale
-          </label>
-        </fieldset>
-      )}
-      <button
-        type="button"
-        className="btn btn-ab justify-self-start"
-        disabled={!ready || declare.isPending || start === end}
-        onClick={() =>
-          declare.mutate(
-            { datasetId: table.id, start_column: start, end_column: end || null, end_inclusive: needsChoice ? inclusive === true : true },
-            { onSuccess: () => toast(`Vigência de ${table.key} declarada.`) },
-          )
-        }
-      >
-        Declarar vigência
-      </button>
-      {failure && (
-        <p role="alert" className="small-note text-b-deep">
-          {failure.message}
-        </p>
-      )}
-    </div>
-  );
-}
-
 type TableProps = {
   table: MapTable;
   model: MapModel;
@@ -168,9 +59,57 @@ type TableProps = {
   onSelectRelation: (id: string) => void;
   onFocusTable: (key: string) => void;
   onOpenRecord: OpenRecord;
+  onNewVersion: (key: string) => void;
+  onRemoved: () => void;
 };
 
-export function TablePanel({ table, model, onOpenField, onSelectRelation, onFocusTable, onOpenRecord }: TableProps) {
+function RemoveTable({ table, relations, onRemoved }: { table: MapTable; relations: number; onRemoved: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const remove = useDeleteDataset();
+  const toast = useToast();
+  if (!confirming) {
+    return (
+      <button type="button" className="btn btn-quiet" onClick={() => setConfirming(true)}>
+        Remover tabela
+      </button>
+    );
+  }
+  return (
+    <div className="fix-box" role="group" aria-label={`Confirmar a remoção de ${table.key}`}>
+      <p className="m-0 text-[15px] leading-relaxed">
+        Remover <b className="font-mono">{table.key}</b> com todas as versões{relations > 0 ? ` e ${plural(relations, "relação", "relações")}` : ""}? Não dá para desfazer.
+      </p>
+      <p className="small-note">Tabelas usadas em execuções ou que são o ponto de partida de uma receita não podem ser removidas: a linhagem depende delas.</p>
+      <div className="panel-actions">
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={remove.isPending}
+          onClick={() =>
+            remove.mutate(table.id, {
+              onSuccess: () => {
+                toast(`${table.key} removida.`);
+                onRemoved();
+              },
+            })
+          }
+        >
+          {remove.isPending ? "Removendo…" : "Remover de vez"}
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={() => setConfirming(false)}>
+          Cancelar
+        </button>
+      </div>
+      {remove.error && (
+        <p role="alert" className="small-note text-b-deep">
+          {remove.error.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function TablePanel({ table, model, onOpenField, onSelectRelation, onFocusTable, onOpenRecord, onNewVersion, onRemoved }: TableProps) {
   const [page, setPage] = useState(1);
   const rows = useVersionRows(table.versionId, page);
   const relations = model.relations.filter((r) => r.from.dataset_key === table.key || r.to.dataset_key === table.key);
@@ -193,7 +132,7 @@ export function TablePanel({ table, model, onOpenField, onSelectRelation, onFocu
       </section>
       <section className="panel-section">
         <h3>Vigência</h3>
-        <ValiditySection key={table.validity ? "declared" : "empty"} table={table} />
+        <ValidityForm key={table.validity ? "declared" : "empty"} table={table} />
       </section>
       <section className="panel-section">
         <h3>Relações · {relations.length}</h3>
@@ -203,6 +142,18 @@ export function TablePanel({ table, model, onOpenField, onSelectRelation, onFocu
             Destacar a vizinhança no mapa
           </button>
         )}
+      </section>
+      <section className="panel-section">
+        <h3>Arquivo</h3>
+        <p className="small-note">
+          {table.file} é a versão {table.versionNumber}. Uma nova versão não apaga esta: execuções antigas continuam apontando para a versão que usaram.
+        </p>
+        <div className="panel-actions mt-3">
+          <button type="button" className="btn" onClick={() => onNewVersion(table.key)}>
+            Enviar nova versão
+          </button>
+          <RemoveTable table={table} relations={relations.length} onRemoved={onRemoved} />
+        </div>
       </section>
       <section className="panel-section">
         <h3>Registros</h3>

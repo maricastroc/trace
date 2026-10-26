@@ -22,6 +22,9 @@
   --bar-h: 60px;
   --trail-h: 36px;
   --panel-w: clamp(420px, 44vw, 720px);
+  --f-display: var(--font-bricolage), "Instrument Sans", sans-serif;
+  --f-ui: var(--font-instrument), "Helvetica Neue", Arial, sans-serif;
+  --f-mono: var(--font-plex-mono), ui-monospace, monospace;
   color-scheme: light;
 }
 
@@ -314,6 +317,209 @@
     mix-blend-mode: multiply;
     transform: translate(2px, 1px);
   }
+
+  .small-note {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--ink-2);
+  }
+
+  .fix-box {
+    border: 1px dashed var(--rule-2);
+    border-radius: 12px;
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .fix-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font: 13px var(--f-mono);
+  }
+
+  .rt-wrap {
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--sheet);
+  }
+
+  .rt-scroll {
+    max-height: 420px;
+    overflow: auto;
+  }
+
+  table.rt {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rt th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--sheet);
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--rule-2);
+    white-space: nowrap;
+    font: 500 11.5px/1 var(--f-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .rt td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    font: 13.5px/1.4 var(--f-mono);
+    white-space: nowrap;
+  }
+
+  .rt td.empty {
+    color: var(--ink-3);
+  }
+
+  .rt tbody tr.clickable {
+    cursor: pointer;
+  }
+
+  .rt tbody tr.clickable:hover,
+  .rt tbody tr.clickable:focus-visible {
+    background: var(--paper);
+  }
+
+  .rt-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    font-size: 13.5px;
+    color: var(--ink-2);
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
+  }
+
+  .rt-foot .btn {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 13.5px;
+  }
+
+  .state-pill-caveat {
+    color: #fff;
+    background: var(--ab);
+    box-shadow: 3px -3px 0 0 var(--b);
+  }
+
+  .state-pill-review {
+    color: var(--b-deep);
+    background: var(--b-wash);
+    outline: 1.5px solid var(--b);
+    outline-offset: -1.5px;
+  }
+
+  .rt tbody tr[aria-selected="true"] {
+    background: var(--a-wash);
+  }
+
+  .rt .cell {
+    display: inline-block;
+    max-width: 26ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+
+  .rd-fields {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px 18px;
+  }
+
+  .rd-field {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .rd-field dt {
+    font: 500 12px/1.3 var(--f-mono);
+    color: var(--ink-3);
+    overflow-wrap: anywhere;
+  }
+
+  .rd-field dd {
+    margin: 0;
+    font: 14px/1.45 var(--f-mono);
+    color: var(--ink);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .rd-field dd.empty {
+    color: var(--ink-3);
+    font-style: italic;
+    font-family: var(--f-ui);
+  }
+
+  .chip[aria-pressed="true"] {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--sheet);
+  }
+
+  .chip[aria-pressed="true"] b {
+    color: var(--sheet);
+  }
+
+  .tagx {
+    display: inline-block;
+    font: 600 11.5px/1 var(--f-mono);
+    letter-spacing: 0.04em;
+    padding: 4px 7px;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
+
+  .tagx.in {
+    background: var(--a-wash);
+    color: var(--a-deep);
+  }
+
+  .tagx.rep {
+    background: var(--paper-2);
+    color: var(--ink);
+    box-shadow: 2px -2px 0 0 var(--b);
+  }
+
+  .tagx.out {
+    background: var(--b-wash);
+    color: var(--b-deep);
+  }
+
+  .select {
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid var(--rule-2);
+    background: var(--sheet);
+    padding: 0 8px;
+    font: 500 13.5px var(--f-mono);
+    color: var(--ink);
+    max-width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -333,3 +539,4 @@
     --bar-h: 100px;
   }
 }
+

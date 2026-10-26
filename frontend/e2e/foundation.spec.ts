@@ -31,8 +31,10 @@ test("the main navigation has three areas and marks the current one", async ({ p
 
   await nav.getByRole("link", { name: "Comparações" }).click();
   await expect(page).toHaveURL(/\/comparacoes$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Por que esses números não batem?");
-  await expect(page.getByText("em construção")).toBeVisible();
+  await expect(page).toHaveTitle("Comparações · Trace");
+  await expect(nav.getByRole("link", { name: "Comparações" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("O que você quer comparar?");
+  await expect(page.getByRole("navigation", { name: "Rastro da investigação" })).toContainText("Escolher os conjuntos");
 });
 
 test("the skip link is the first stop and moves focus to the content", async ({ page }) => {

@@ -282,6 +282,8 @@ export type Recipe = {
   revision: number;
   base_dataset: { id: string; key: string; name: string };
   definition: { base_dataset_id: string; steps: unknown[] };
+  question: QuestionSpec | null;
+  question_key: string | null;
   compiled: {
     base_dataset_id: string | null;
     inputs: RecipeInput[];
@@ -520,3 +522,271 @@ export type Flows = {
   results: FlowItem[];
   others: { result_nos: number[]; contributor_count: number; base_tuples: number; trace: TracePoint[]; related_exclusions: RelatedCount[] } | null;
 };
+
+export type QuestionMeasure = { function: "count"; column?: null } | { function: "count_distinct" | "sum"; column: string };
+
+export type QuestionPeriod =
+  | { kind: "date"; column: string; from: string; to: string }
+  | { kind: "validity"; reading: ValidityReading | null; from: string; to: string };
+
+export type QuestionDimension = { relationships: string[]; column: string; label_column: string | null; value: string | null };
+
+export type QuestionSpec = {
+  base_dataset_id: string;
+  measure: QuestionMeasure;
+  period: QuestionPeriod | null;
+  dimension: QuestionDimension | null;
+};
+
+export type PreviewStep = {
+  position: number;
+  type: CompiledStep["type"];
+  title: string | null;
+  plain: StepPlain | null;
+  input_count: number;
+  output_count: number;
+  excluded_count: number;
+  stats: StepStats | null;
+};
+
+export type Preview = {
+  kind: "preview";
+  traceable: false;
+  computed: boolean;
+  reason: "blocked" | "empty" | "failed" | null;
+  error: RunError | null;
+  basis: {
+    recipe: { id: string; revision: number } | null;
+    inputs: { position: number; alias: string; dataset_id: string; dataset_name: string; version_id: string; version_number: number }[];
+  };
+  issues: Issue[];
+  recipe_steps: CompiledStep[];
+  pending: Issue[];
+  steps: PreviewStep[];
+  columns: OutputColumn[] | null;
+  results: ResultRow[];
+  totals: RunTotals | null;
+  tuple_count: number | null;
+  computed_at: string;
+};
+
+export type QuestionAnswer = {
+  question: QuestionSpec;
+  question_key: string;
+  needs_reading: boolean;
+  recipe: { base_dataset_id: string; steps: unknown[] } | null;
+  preview: Preview | null;
+};
+
+export type ReadingCriteria = { enters: string; leaves: string; rule: string; undetermined: string };
+
+export type ReadingOption = {
+  reading: ValidityReading;
+  question_key: string;
+  computed: boolean;
+  reason: Preview["reason"];
+  value: number | string | null;
+  rows: number | null;
+  excluded: { out: number; undetermined: number } | null;
+  pending: Issue[];
+  criteria: ReadingCriteria | null;
+};
+
+export type QuestionReadings = { declaration: ValidityDeclaration | null; readings: ReadingOption[] };
+
+export type TracedQuestion = { recipe_id: string; question_key: string; run: RunSummary };
+
+export type Identity = { value: string; tuples: number; source_rows: number; repeated: number };
+
+export type IdentitiesMeta = {
+  measure: string;
+  source: { alias: string; column: string; input: number };
+  distinct: number;
+  rows: number;
+  repeated: number;
+  ignored_null: number;
+};
+
+export type ImportPreview = {
+  filename: string;
+  suggested_key: string;
+  encoding: string;
+  delimiter: string;
+  row_count: number;
+  column_count: number;
+  size_bytes: number;
+  checksum: string;
+  warnings: { code: string; message: string }[];
+  columns: { position: number; key: string; label: string; type: ColumnType; profile: ColumnProfile }[];
+  rows: { line_number: number; values: Record<string, string | null> }[];
+};
+
+export type ComparisonRule = "leading_zeros" | "case_and_spacing";
+
+export type ComparisonPopulationSide = {
+  kind: "population";
+  label?: string;
+  dataset_id: string;
+  version_id: string | null;
+  key: string;
+  period?: QuestionPeriod | null;
+  dimension?: QuestionDimension | null;
+};
+
+export type ComparisonRunSide = { kind: "run"; label?: string; run_id: string; key: string };
+
+export type ComparisonSideSpec = ComparisonPopulationSide | ComparisonRunSide;
+
+export type EquivalenceDeclaration = { a: { dataset_id: string; key: string }; b: { dataset_id: string; key: string } };
+
+export type ComparisonSpec = {
+  a: ComparisonSideSpec;
+  b: ComparisonSideSpec;
+  rules: ComparisonRule[];
+  fields: { a: string; b: string }[];
+  equivalence?: EquivalenceDeclaration;
+};
+
+export type EquivalenceStatus = "same_field" | "relation" | "declared" | "unconfirmed";
+
+export type EquivalenceField = { dataset_id: string; dataset: string; key: string; name: string };
+
+export type ComparisonReading = {
+  kind: "registry_references" | "same_field" | "unknown";
+  registry: "a" | "b" | null;
+  entity: { dataset: string; name: string } | null;
+  key_unique: boolean | null;
+};
+
+export type ComparisonEquivalence = {
+  reading?: ComparisonReading | null;
+  status: EquivalenceStatus;
+  a: EquivalenceField;
+  b: EquivalenceField;
+  relationship_id: string | null;
+  relationship_standing: RelationshipStandingKey | null;
+  statement: string;
+};
+
+export type ComparisonSideBasis = {
+  kind: "population" | "run";
+  label: string;
+  dataset: { id: string; key: string; name: string };
+  version: { id: string; number: number; rows: number };
+  key: string;
+  key_type: ColumnType | null;
+  run_id: string | null;
+  period: QuestionPeriod | null;
+  dimension: QuestionDimension | null;
+  steps: { position: number; type: CompiledStep["type"]; summary: string }[];
+};
+
+export type ComparisonExplanation = "excluded_in_other" | "outside_other_period" | "possible_match" | "ambiguous_match" | "variant_of_matched" | "absent";
+
+export type ComparisonCategory = "shared" | "shared_by_rule" | "only_a" | "only_b";
+
+export type ComparisonSideCounts = { rows: number; rows_with_key: number; empty_rows: number; distinct: number; repeated_identities: number; repeated_rows: number };
+
+export type ComparisonCheck = { name: string; formula: string; left: number; right: number; holds: boolean };
+
+export type ComparisonSummary = {
+  unit: string;
+  a: ComparisonSideCounts;
+  b: ComparisonSideCounts;
+  shared: number;
+  shared_by_rule: number;
+  only_a: number;
+  only_b: number;
+  net_difference: number;
+  unmatched: number;
+  possible_matches: number;
+  explanations: { only_a: Record<ComparisonExplanation, number>; only_b: Record<ComparisonExplanation, number> };
+  fields: { a: string; b: string; compared: number; same: number; different: number; partial: number }[];
+  checks: ComparisonCheck[];
+};
+
+export type ComparisonIssue = { severity: "error" | "blocker" | "warning"; code: string; message: string; side: "a" | "b" | null; path: string; details: Record<string, unknown> };
+
+export type ComparisonAttribution = { kind: "identical" | "versions" | "criteria" | "relations" | "keys" | "mixed" | "sources"; differences: string[]; statement: string };
+
+export type ComparisonIdentity = {
+  identity: string;
+  a_value: string | null;
+  b_value: string | null;
+  category: ComparisonCategory;
+  explanation: ComparisonExplanation | null;
+  detail: Record<string, unknown> | null;
+  a_rows: number;
+  b_rows: number;
+  fields: { a: string; b: string; status: "same" | "different" | "partial"; a_values: (string | null)[]; b_values: (string | null)[] }[];
+};
+
+export type ComparisonPreview = {
+  kind: "preview";
+  traceable: false;
+  computed: boolean;
+  reason: "blocked" | "failed" | null;
+  error: { code: string; message: string } | null;
+  spec: ComparisonSpec;
+  spec_key: string;
+  sides: { a: ComparisonSideBasis; b: ComparisonSideBasis };
+  attribution: ComparisonAttribution;
+  equivalence: ComparisonEquivalence;
+  issues: ComparisonIssue[];
+  pending: Issue[];
+  summary: ComparisonSummary | null;
+  samples: Record<ComparisonCategory, ComparisonIdentity[]> | null;
+  explained_samples: Record<"only_a" | "only_b", Partial<Record<ComparisonExplanation, ComparisonIdentity[]>>> | null;
+  computed_at: string;
+};
+
+export type ComparisonRunStatus = "queued" | "running" | "succeeded" | "failed";
+
+export type ComparisonRunDetail = {
+  id: string;
+  kind: "run";
+  traceable: true;
+  comparison_id: string;
+  status: ComparisonRunStatus;
+  spec: ComparisonSpec;
+  sides: { a: ComparisonSideBasis; b: ComparisonSideBasis };
+  attribution: ComparisonAttribution;
+  equivalence: ComparisonEquivalence | null;
+  issues: ComparisonIssue[];
+  summary: ComparisonSummary | null;
+  error: { code: string; message: string } | null;
+  duration_ms: number | null;
+  queued_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export type ComparisonRunBrief = {
+  id: string;
+  status: ComparisonRunStatus;
+  rules: ComparisonRule[];
+  equivalence: Pick<ComparisonEquivalence, "status" | "statement"> | null;
+  sides: Record<"a" | "b", { label: string; kind: "population" | "run"; dataset: { id: string; key: string; name: string }; version: { id: string; number: number; rows: number }; key: string }>;
+  summary: Pick<ComparisonSummary, "a" | "b" | "shared" | "shared_by_rule" | "only_a" | "only_b" | "net_difference" | "unmatched"> | null;
+  queued_at: string | null;
+  finished_at: string | null;
+};
+
+export type ComparisonListItem = { id: string; name: string; spec: ComparisonSpec; spec_key: string; last_run: ComparisonRunBrief | null; runs: number; created_at: string };
+
+export type ComparisonRow = SourceRow & {
+  state: "selected" | "excluded";
+  exclusion: { step_position: number; step_title: string | null; code: string; label: string; explanation: string } | null;
+};
+
+export type ComparisonRowsMeta = PageMeta & {
+  side: "a" | "b";
+  label: string;
+  dataset: { id: string; key: string; name: string };
+  version: { id: string; number: number; rows: number };
+  key: string;
+  identity: string | null;
+  run_id: string;
+};
+
+export type DatasetDetail = DatasetSummary & { versions: VersionSummary[]; columns: DatasetColumn[] };

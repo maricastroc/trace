@@ -15,6 +15,7 @@ import { MapCanvas, type Selection } from "./components/MapCanvas";
 import { MapList } from "./components/MapList";
 import { RelationPanel } from "./components/RelationPanel";
 import { FieldPanel, RecordPanel, TablePanel } from "./components/TablePanels";
+import { ImportPanel } from "./components/ImportPanel";
 import { TYPE_WORDS } from "./components/FieldIcon";
 import { relationLabel } from "./model/evidence";
 import { buildMapModel, standingOf, type MapModel } from "./model/graph";
@@ -24,6 +25,7 @@ type RecordEntry = { table: string; rowId: number; values: Record<string, string
 const STATE_WORDS: Record<string, string> = { suggested: "sugerida", confirmed: "confirmada", caveat: "confirmada com ressalva", rejected: "rejeitada", review: "para reavaliar" };
 
 function parseSelection(params: URLSearchParams, model: MapModel | null): Selection {
+  if (params.get("importar") !== null) return null;
   const relation = params.get("relacao");
   if (relation) return { kind: "rel", id: relation };
   const table = params.get("tabela");
@@ -61,17 +63,19 @@ export function MapaScreen() {
     [ready, datasets.data, versions.data, relationships.data],
   );
 
+  const importing = params.get("importar");
   const selection = parseSelection(params, model);
   const selectionKey = selection ? JSON.stringify(selection) : "";
   const records = useMemo(() => (recordState.key === selectionKey ? recordState.items : []), [recordState, selectionKey]);
   const top = records[records.length - 1] ?? null;
-  const panelOpen = selection !== null;
+  const panelOpen = selection !== null || importing !== null;
 
   const go = useCallback((query: string) => router.push(query ? `/mapa?${query}` : "/mapa", { scroll: false }), [router]);
   const selectRelation = useCallback((id: string) => go(`relacao=${encodeURIComponent(id)}`), [go]);
   const openTable = useCallback((key: string) => go(`tabela=${encodeURIComponent(key)}`), [go]);
   const openField = useCallback((key: string, column: string) => go(`campo=${encodeURIComponent(`${key}.${column}`)}`), [go]);
   const close = useCallback(() => go(""), [go]);
+  const openImport = useCallback((target?: string) => go(`importar=${encodeURIComponent(target ?? "nova")}`), [go]);
   const focus = useCallback(
     (key: string | null) => {
       setFocusTable(key);
@@ -112,6 +116,7 @@ export function MapaScreen() {
   if (selection?.kind === "rel") trail.push({ label: relation ? relationLabel(relation) : "relação", href: `/mapa?relacao=${encodeURIComponent(selection.id)}` });
   if (selection?.kind === "table") trail.push({ label: selection.key, href: `/mapa?tabela=${encodeURIComponent(selection.key)}` });
   if (selection?.kind === "field") trail.push({ label: selection.key, href: `/mapa?tabela=${encodeURIComponent(selection.key)}` }, { label: `${selection.key}.${selection.column}` });
+  if (importing !== null) trail.push({ label: importing === "nova" ? "importar CSV" : `nova versão de ${importing}` });
   if (!selection && focusTable) trail.push({ label: `vizinhança de ${focusTable}` });
   for (const entry of records) trail.push({ label: recordTitle(entry) });
   useTrail(trail);
@@ -122,6 +127,17 @@ export function MapaScreen() {
       onSuccess: (response) => {
         const fresh = response.data.filter((r) => !before.has(r.id)).length;
         toast(fresh ? `${plural(fresh, "relação nova encontrada", "relações novas encontradas")}.` : "Nenhuma relação nova. As decisões existentes foram mantidas.");
+      },
+      onError: (error) => toast(error.message),
+    });
+  };
+
+  const afterImport = (key: string) => {
+    openTable(key);
+    discover.mutate(undefined, {
+      onSuccess: (response) => {
+        const touching = response.data.filter((r) => r.from.dataset_key === key || r.to.dataset_key === key).length;
+        toast(touching ? `${plural(touching, "relação envolve", "relações envolvem")} ${key}. Clique numa conexão para ver a evidência.` : `Nenhuma relação encontrada para ${key}.`);
       },
       onError: (error) => toast(error.message),
     });
@@ -155,13 +171,30 @@ export function MapaScreen() {
     return (
       <div className="mx-auto max-w-[760px] px-8 py-16">
         <h1 className="mb-4 font-display text-[36px] font-bold tracking-[-0.03em]">Mapa</h1>
-        <EmptyBlock title="Nenhuma tabela neste espaço.">Troque de cenário no menu ao lado do logo para ver dados de demonstração.</EmptyBlock>
+        <EmptyBlock title="Nenhuma tabela neste espaço.">Importe um CSV para começar, ou troque de cenário no menu ao lado do logo para ver dados de demonstração.</EmptyBlock>
+        <button type="button" className="btn btn-ab mt-4" onClick={() => openImport()}>
+          Importar CSV
+        </button>
+        {importing !== null && (
+          <div className="mapa mt-8 h-auto overflow-visible">
+            <ImportPanel model={model} target={null} onDone={afterImport} onCancel={close} />
+          </div>
+        )}
       </div>
     );
   }
 
   let panel: { eyebrow: string; eyebrowClassName?: string; title: string; sub?: string; body: React.ReactNode } | null = null;
-  if (top && recordTable) {
+  if (importing !== null) {
+    const target = importing !== "nova" && model.byKey.has(importing) ? importing : null;
+    panel = {
+      eyebrow: "Importar CSV",
+      eyebrowClassName: "eyebrow-ab",
+      title: target ? `Nova versão de ${target}` : "Trazer um arquivo",
+      sub: target ? `${target} está na versão ${model.byKey.get(target)?.versionNumber}` : undefined,
+      body: <ImportPanel key={importing} model={model} target={target} onDone={afterImport} onCancel={close} />,
+    };
+  } else if (top && recordTable) {
     panel = {
       eyebrow: `Registro · ${recordTable.file} · linha ${top.line}`,
       title: recordTitle(top),
@@ -192,7 +225,19 @@ export function MapaScreen() {
       eyebrow: `Tabela · ${selectedTable.file} · versão ${selectedTable.versionNumber}`,
       title: selectedTable.key,
       sub: `${plural(selectedTable.rows, "linha", "linhas")} · ${plural(selectedTable.columns.length, "campo", "campos")}`,
-      body: <TablePanel key={selectedTable.key} table={selectedTable} model={model} onOpenField={openField} onSelectRelation={selectRelation} onFocusTable={focus} onOpenRecord={openRecord} />,
+      body: (
+        <TablePanel
+          key={selectedTable.key}
+          table={selectedTable}
+          model={model}
+          onOpenField={openField}
+          onSelectRelation={selectRelation}
+          onFocusTable={focus}
+          onOpenRecord={openRecord}
+          onNewVersion={openImport}
+          onRemoved={close}
+        />
+      ),
     };
   } else if (selection?.kind === "field" && selectedTable && selectedColumn) {
     const p = selectedColumn.profile;
@@ -209,7 +254,7 @@ export function MapaScreen() {
   return (
     <div className={`mapa ${panelOpen ? "panel-open" : ""}`}>
       {compact ? (
-        <MapList model={model} discovering={discover.isPending} onDiscover={runDiscover} onSelectRelation={selectRelation} onOpenTable={openTable} onOpenField={openField} />
+        <MapList model={model} discovering={discover.isPending} onDiscover={runDiscover} onImport={() => openImport()} onSelectRelation={selectRelation} onOpenTable={openTable} onOpenField={openField} />
       ) : (
         <MapCanvas
           model={model}
@@ -218,6 +263,7 @@ export function MapaScreen() {
           panelOpen={panelOpen}
           discovering={discover.isPending}
           onDiscover={runDiscover}
+          onImport={() => openImport()}
           onSelectRelation={selectRelation}
           onOpenTable={openTable}
           onOpenField={openField}
@@ -235,7 +281,7 @@ export function MapaScreen() {
         title={panel?.title ?? ""}
         sub={panel?.sub}
         back={records.length ? { label: previous, onClick: popRecord } : undefined}
-        focusKey={`${selectionKey}|${records.length}`}
+        focusKey={`${importing ?? ""}|${selectionKey}|${records.length}`}
       >
         {panel?.body}
       </SidePanel>

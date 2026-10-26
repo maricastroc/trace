@@ -1,10 +1,19 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { query, request } from "./api";
+import { query, request, upload } from "./api";
 import type {
   BreakdownRow,
+  ComparisonIdentity,
+  ComparisonListItem,
+  ComparisonPreview,
+  ComparisonRow,
+  ComparisonRowsMeta,
+  ComparisonRunBrief,
+  ComparisonRunDetail,
+  ComparisonSpec,
   Contributor,
+  DatasetDetail,
   DatasetSummary,
   DatasetVersion,
   Diagnostic,
@@ -14,7 +23,13 @@ import type {
   Journey,
   Meta,
   OutputColumn,
+  IdentitiesMeta,
+  ImportPreview,
+  Identity,
   Paginated,
+  QuestionAnswer,
+  QuestionReadings,
+  QuestionSpec,
   Recipe,
   Relationship,
   RelationshipDraft,
@@ -26,6 +41,7 @@ import type {
   RunSummary,
   SourceRow,
   SummaryEntry,
+  TracedQuestion,
 } from "./types";
 import { useToken } from "./workspace";
 
@@ -120,10 +136,10 @@ export function useContributors(runId: string | null, resultNo: number | null, i
   );
 }
 
-export function useExclusions(runId: string | null, filters: { step?: number; result?: number }, page: number) {
+export function useExclusions(runId: string | null, filters: { step?: number; result?: number; code?: string }, page: number) {
   return useApi<Paginated<Exclusion, { summary: SummaryEntry[] }>>(
-    ["exclusions", runId, filters.step, filters.result, page],
-    runId ? `/runs/${runId}/exclusions${query({ step: filters.step, result: filters.result, page, per_page: 12 })}` : null,
+    ["exclusions", runId, filters.step, filters.result, filters.code, page],
+    runId ? `/runs/${runId}/exclusions${query({ step: filters.step, result: filters.result, code: filters.code, page, per_page: 12 })}` : null,
     { keepPrevious: true },
   );
 }
@@ -205,6 +221,8 @@ function useRelationshipInvalidation() {
     client.invalidateQueries({ queryKey: ["relationship"] });
     client.invalidateQueries({ queryKey: ["relationship-draft"] });
     client.invalidateQueries({ queryKey: ["recipes"] });
+    client.invalidateQueries({ queryKey: ["question-preview"] });
+    client.invalidateQueries({ queryKey: ["question-readings"] });
   };
 }
 
@@ -244,6 +262,8 @@ function useDatasetInvalidation() {
   return () => {
     client.invalidateQueries({ queryKey: ["datasets"] });
     client.invalidateQueries({ queryKey: ["recipes"] });
+    client.invalidateQueries({ queryKey: ["question-preview"] });
+    client.invalidateQueries({ queryKey: ["question-readings"] });
   };
 }
 
@@ -286,4 +306,172 @@ export function useLaunchRun() {
       client.invalidateQueries({ queryKey: ["recipes"] });
     },
   });
+}
+
+export function useQuestionPreview(question: QuestionSpec | null) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ["question-preview", question, token],
+    queryFn: ({ signal }) => request<{ data: QuestionAnswer }>("/questions/preview", { method: "POST", body: { question }, token, signal }),
+    enabled: token !== null && question !== null,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useQuestionReadings(question: QuestionSpec | null) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ["question-readings", question, token],
+    queryFn: ({ signal }) => request<{ data: QuestionReadings }>("/questions/readings", { method: "POST", body: { question }, token, signal }),
+    enabled: token !== null && question !== null,
+    retry: false,
+  });
+}
+
+export function useTraceQuestion() {
+  const token = useToken();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ question, title }: { question: QuestionSpec; title: string }) =>
+      request<{ data: TracedQuestion }>("/questions/trace", { method: "POST", body: { question, title }, token }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["runs"] });
+      client.invalidateQueries({ queryKey: ["recipes"] });
+    },
+  });
+}
+
+export function useIdentities(runId: string | null, resultNo: number | null, measure: string | null, page: number) {
+  return useApi<Paginated<Identity, IdentitiesMeta>>(
+    ["identities", runId, resultNo, measure, page],
+    runId && resultNo && measure ? `/runs/${runId}/results/${resultNo}/identities${query({ measure, page, per_page: 12 })}` : null,
+    { keepPrevious: true },
+  );
+}
+
+export function useImportPreview() {
+  const token = useToken();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return upload<{ data: ImportPreview }>("/imports/preview", form, token);
+    },
+  });
+}
+
+export function useImportFile() {
+  const token = useToken();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, name, datasetId }: { file: File; name?: string; datasetId?: string }) => {
+      const form = new FormData();
+      form.append("file", file);
+      if (name) form.append("name", name);
+      return upload<{ data: DatasetSummary }>(datasetId ? `/datasets/${datasetId}/versions` : "/datasets", form, token);
+    },
+    onSuccess: () => {
+      for (const key of ["datasets", "version", "version-rows", "relationships", "relationship", "recipes", "question-preview", "question-readings"]) {
+        client.invalidateQueries({ queryKey: [key] });
+      }
+    },
+  });
+}
+
+export function useDeleteDataset() {
+  const token = useToken();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (datasetId: string) => request<void>(`/datasets/${datasetId}`, { method: "DELETE", token }),
+    onSuccess: () => {
+      for (const key of ["datasets", "relationships", "relationship", "recipes", "question-preview", "question-readings"]) {
+        client.invalidateQueries({ queryKey: [key] });
+      }
+    },
+  });
+}
+
+export function useDatasetDetail(datasetId: string | null) {
+  return useApi<{ data: DatasetDetail }>(["dataset", datasetId], datasetId ? `/datasets/${datasetId}` : null);
+}
+
+export function useDatasetDetails(datasetIds: string[]) {
+  const token = useToken();
+  return useQueries({
+    queries: datasetIds.map((id) => ({
+      queryKey: ["dataset", id, token],
+      queryFn: ({ signal }: { signal: AbortSignal }) => request<{ data: DatasetDetail }>(`/datasets/${id}`, { token, signal }),
+      enabled: token !== null,
+    })),
+    combine: combineDetails,
+  });
+}
+
+function combineDetails(results: UseQueryResult<{ data: DatasetDetail }>[]) {
+  return {
+    data: Object.fromEntries(results.flatMap((result) => (result.data ? [[result.data.data.id, result.data.data]] : []))) as Record<string, DatasetDetail>,
+    pending: results.some((result) => result.isPending),
+  };
+}
+
+export function useComparisonPreview(spec: ComparisonSpec | null) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ["comparison-preview", spec, token],
+    queryFn: ({ signal }) => request<{ data: ComparisonPreview }>("/comparisons/preview", { method: "POST", body: { spec }, token, signal }),
+    enabled: token !== null && spec !== null,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useTraceComparison() {
+  const token = useToken();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ spec, name }: { spec: ComparisonSpec; name: string }) =>
+      request<{ data: ComparisonRunDetail }>("/comparisons/trace", { method: "POST", body: { spec, name }, token }),
+    onSuccess: (response) => {
+      client.setQueryData(["comparison-run", response.data.id, token], response);
+      client.invalidateQueries({ queryKey: ["comparisons"] });
+      client.invalidateQueries({ queryKey: ["comparison-runs"] });
+    },
+  });
+}
+
+export function useComparisonRun(runId: string | null) {
+  return useApi<{ data: ComparisonRunDetail }>(["comparison-run", runId], runId ? `/comparison-runs/${runId}` : null, {
+    refetchInterval: (data) => (data && (data.data.status === "queued" || data.data.status === "running") ? 800 : false),
+  });
+}
+
+export function useComparisons() {
+  return useApi<{ data: ComparisonListItem[] }>(["comparisons"], "/comparisons");
+}
+
+export function useComparisonRuns(comparisonId: string | null) {
+  return useApi<Paginated<ComparisonRunBrief>>(["comparison-runs", comparisonId], comparisonId ? `/comparison-runs${query({ comparison_id: comparisonId, per_page: 20 })}` : null);
+}
+
+export type IdentityFilters = { category?: string; explanation?: string; repeated?: "a" | "b"; changed?: boolean; search?: string };
+
+export function useComparisonIdentities(runId: string | null, filters: IdentityFilters, page: number, perPage = 12) {
+  return useApi<Paginated<ComparisonIdentity>>(
+    ["comparison-identities", runId, filters, page, perPage],
+    runId
+      ? `/comparison-runs/${runId}/identities${query({ category: filters.category, explanation: filters.explanation, repeated: filters.repeated, changed: filters.changed ? 1 : undefined, search: filters.search, page, per_page: perPage })}`
+      : null,
+    { keepPrevious: true },
+  );
+}
+
+export function useComparisonRows(runId: string | null, side: "a" | "b", target: { identity: string } | { empty: true } | null, state: "selected" | "excluded" | "all", page: number) {
+  const identity = target && "identity" in target ? target.identity : undefined;
+  const empty = target && "empty" in target ? 1 : undefined;
+  return useApi<{ data: ComparisonRow[]; meta: ComparisonRowsMeta }>(
+    ["comparison-rows", runId, side, identity, empty, state, page],
+    runId && target ? `/comparison-runs/${runId}/rows${query({ side, identity, empty, state, page, per_page: 10 })}` : null,
+    { keepPrevious: true },
+  );
 }

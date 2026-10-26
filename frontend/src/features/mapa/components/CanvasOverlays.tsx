@@ -9,9 +9,9 @@ import { pathStandings, relationsSummary } from "../model/summary";
 export type MapMode = "structure" | "paths";
 export type PathState = { from: string; to: string; pick: number };
 
-type StatusProps = { model: MapModel; hidden: boolean; discovering: boolean; onDiscover: () => void };
+type StatusProps = { model: MapModel; hidden: boolean; discovering: boolean; onDiscover: () => void; onImport: () => void };
 
-export const MapStatus = forwardRef<HTMLDivElement, StatusProps>(function MapStatus({ model, hidden, discovering, onDiscover }, ref) {
+export const MapStatus = forwardRef<HTMLDivElement, StatusProps>(function MapStatus({ model, hidden, discovering, onDiscover, onImport }, ref) {
   const pending = model.relations.some((r) => r.status === "suggested");
   return (
     <div ref={ref} className="map-ov map-status" hidden={hidden}>
@@ -21,9 +21,14 @@ export const MapStatus = forwardRef<HTMLDivElement, StatusProps>(function MapSta
         {relationsSummary(model.relations)}
         {pending ? ". Clique numa conexão para ver a evidência." : "."}
       </p>
-      <button type="button" className="btn-link map-discover" onClick={onDiscover} disabled={discovering}>
-        {discovering ? "Procurando relações…" : "Procurar relações de novo"}
-      </button>
+      <div className="map-actions">
+        <button type="button" className="btn-link" onClick={onImport}>
+          Importar CSV
+        </button>
+        <button type="button" className="btn-link map-discover" onClick={onDiscover} disabled={discovering}>
+          {discovering ? "Procurando relações…" : "Procurar relações de novo"}
+        </button>
+      </div>
     </div>
   );
 });

@@ -340,3 +340,43 @@ test("validity is declared explicitly in the table panel and marked on the map",
   await panel.getByRole("button", { name: "Remover declaração" }).click();
   await expect(panel.getByRole("button", { name: "Declarar vigência" })).toBeVisible();
 });
+
+test("a CSV is previewed, imported as a new table, connected by discovery and replaced by a new version", async ({ page, request }) => {
+  const api = await open(page, request, "refeicoes");
+  await api.removeDataset("doacoes_e2e");
+
+  await page.goto("/mapa");
+  await page.getByRole("button", { name: "Importar CSV" }).click();
+  const panel = page.getByRole("dialog", { name: "Trazer um arquivo" });
+  await panel.locator("input[type=file]").setInputFiles({
+    name: "doacoes_e2e.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("id,cozinha_id,valor\nd1,0183,10\nd2,0184,\nd3,0185,7\nd4,0186,3\nd5,0999,5\n"),
+  });
+  await expect(panel).toContainText("5 linhas e 3 colunas");
+  await expect(panel.getByRole("table", { name: "Colunas lidas do arquivo" })).toContainText("identificador");
+  await expect(panel.getByRole("table", { name: "Primeiras linhas do arquivo" })).toContainText("0999");
+  await panel.getByRole("button", { name: "Importar tabela" }).click();
+
+  const table = page.getByRole("dialog", { name: "doacoes_e2e" });
+  await expect(table).toBeVisible();
+  await expect(tableSheet(page, "doacoes_e2e")).toBeVisible();
+  await expect(page.getByText("1 relação envolve doacoes_e2e")).toBeVisible();
+  await expect(table).toContainText("doacoes_e2e.cozinha_id");
+
+  await table.getByRole("button", { name: "Enviar nova versão" }).click();
+  const version = page.getByRole("dialog", { name: "Nova versão de doacoes_e2e" });
+  await version.locator("input[type=file]").setInputFiles({ name: "doacoes_e2e.csv", mimeType: "text/csv", buffer: Buffer.from("id,cozinha_id\nd1,0183\n") });
+  await expect(version).toContainText("Colunas que deixam de existir: valor");
+  await version.getByRole("button", { name: "Importar nova versão" }).click();
+  const updated = page.getByRole("dialog", { name: "doacoes_e2e" });
+  await expect(updated).toContainText("versão 2");
+
+  await updated.getByRole("button", { name: "Remover tabela" }).click();
+  const confirm = updated.getByRole("group", { name: "Confirmar a remoção de doacoes_e2e" });
+  await expect(confirm).toContainText("Não dá para desfazer");
+  await confirm.getByRole("button", { name: "Remover de vez" }).click();
+  await expect(page).toHaveURL(/\/mapa$/);
+  await expect(tableSheet(page, "doacoes_e2e")).toHaveCount(0);
+  await expect(page.getByText("doacoes_e2e removida.")).toBeVisible();
+});
