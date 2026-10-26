@@ -126,7 +126,7 @@ export function MapaScreen() {
     discover.mutate(undefined, {
       onSuccess: (response) => {
         const fresh = response.data.filter((r) => !before.has(r.id)).length;
-        toast(fresh ? `${plural(fresh, "relação nova encontrada", "relações novas encontradas")}.` : "Nenhuma relação nova. As decisões existentes foram mantidas.");
+        toast(fresh ? `${plural(fresh, "sugestão de relação nova", "sugestões de relação novas")}.` : "Nenhuma relação nova. As decisões existentes foram mantidas.");
       },
       onError: (error) => toast(error.message),
     });

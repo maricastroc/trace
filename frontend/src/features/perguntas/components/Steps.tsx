@@ -1,5 +1,6 @@
 "use client";
 
+import { RowOpen } from "@/components/ui/RowOpen";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ErrorBlock, LoadingBlock } from "@/components/ui/ScreenStates";
@@ -43,7 +44,7 @@ export function Ladder({ views, filter, onFilter }: LadderProps) {
   const bar = (n: number) => <span className="ts-bar" aria-hidden style={{ width: `${Math.max(1.5, Math.min(100, (n / scale) * 100))}%` }} />;
 
   return (
-    <ol className="trail-steps" aria-label="Percurso dos registros, do arquivo ao resultado">
+    <ol className="trail-steps" aria-label="Percurso das linhas, do arquivo ao resultado">
       {views.map((view) => {
         const stepSelected = filter.kind === "out" && view.kind !== "source" && view.kind !== "aggregate" && filter.step === view.position;
         const resultSelected = (filter.kind === "in" || filter.kind === "rep") && view.kind === "aggregate";
@@ -60,7 +61,7 @@ export function Ladder({ views, filter, onFilter }: LadderProps) {
         let main: ReactNode;
         let details: ReactNode = null;
         if (view.kind === "source") {
-          main = <div className="ts-main">{head(`${view.name} · versão ${view.version}`, view.rows, view.rows === 1 ? "registro de entrada" : "registros de entrada")}</div>;
+          main = <div className="ts-main">{head(`${view.name} · versão ${view.version}`, view.rows, view.rows === 1 ? "linha de entrada" : "linhas de entrada")}</div>;
           details = bar(view.rows);
         } else if (view.kind === "aggregate") {
           main = (
@@ -77,7 +78,7 @@ export function Ladder({ views, filter, onFilter }: LadderProps) {
           );
         } else {
           const lost = view.losses.reduce((sum, loss) => sum + loss.count, 0);
-          const unit = view.output === 1 ? "registro segue" : "registros seguem";
+          const unit = view.output === 1 ? "linha segue" : "linhas seguem";
           main =
             lost > 0 ? (
               <button type="button" className="ts-main" aria-pressed={stepSelected && filter.kind === "out" && filter.code === null} onClick={() => onFilter({ kind: "out", step: view.position, code: null })}>
@@ -92,11 +93,11 @@ export function Ladder({ views, filter, onFilter }: LadderProps) {
               {view.kind === "join" && (
                 <ul className="ts-facts">
                   <li>
-                    {plural(view.matched, "registro encontrou", "registros encontraram")} par em {view.lookup}
+                    {plural(view.matched, "linha encontrou", "linhas encontraram")} par em {view.lookup}
                   </li>
                   {view.withoutPartner > 0 && (
                     <li>
-                      {plural(view.withoutPartner, "registro sem par continua", "registros sem par continuam")}, sem dados de {view.lookup}
+                      {plural(view.withoutPartner, "linha sem par continua", "linhas sem par continuam")}, sem dados de {view.lookup}
                     </li>
                   )}
                   {view.copies > 0 && (
@@ -203,20 +204,18 @@ function ValueCells({ row, columns }: { row: SourceRow | null; columns: string[]
   );
 }
 
-function rowProps(id: number, selected: boolean, open: () => void) {
-  return {
-    id: `rec-row-${id}`,
-    className: "clickable",
-    tabIndex: 0,
-    "aria-selected": selected,
-    onClick: open,
-    onKeyDown: (event: React.KeyboardEvent) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        open();
-      }
-    },
-  };
+function rowProps(open: () => void) {
+  return { className: "clickable", onClick: open };
+}
+
+function OpenCell({ id, line, selected, open }: { id: number; line: number | null; selected: boolean; open: () => void }) {
+  return (
+    <td>
+      <RowOpen id={`rec-row-${id}`} label={`Abrir a linha ${line ?? ""} do arquivo`} pressed={selected} onOpen={open}>
+        {line ?? "—"}
+      </RowOpen>
+    </td>
+  );
 }
 
 const STATUS: Record<string, [string, string]> = {
@@ -274,22 +273,22 @@ export function Records({ run, base, question, views, groups, resultNo, entering
   const copied = filter.kind === "in" && sourceRows !== null && entering !== null && sourceRows !== entering;
   const context =
     filter.kind === "in"
-      ? `${group ? `Grupo ${group.key === null ? "sem correspondência" : group.label}: ` : ""}${
+      ? `${group ? `Grupo ${group.key === null ? "sem valor no recorte" : group.label}: ` : ""}${
           copied
-            ? `${plural(entering ?? 0, "linha chega", "linhas chegam")} ao resultado, vindas de ${plural(sourceRows ?? 0, "registro", "registros")} de ${base.key}: alguns foram copiados por uma ligação.`
-            : `${plural(entering ?? 0, "registro de", "registros de")} ${base.key} ${entering === 1 ? "chega" : "chegam"} ao resultado.`
+            ? `${plural(entering ?? 0, "linha chega", "linhas chegam")} ao resultado, vindas de ${plural(sourceRows ?? 0, "linha", "linhas")} de ${base.key}: algumas foram copiadas por uma ligação.`
+            : `${plural(entering ?? 0, "linha de", "linhas de")} ${base.key} ${entering === 1 ? "chega" : "chegam"} ao resultado.`
         }`
       : filter.kind === "rep"
         ? `Valores de ${question.measure.column} que aparecem em mais de uma linha do resultado.`
         : stepView
-          ? `${plural(codeLost, "registro saiu", "registros saíram")} no passo ${stepView.position} (${KIND_WORD[stepView.kind].toLowerCase()})${outCode ? ` por: ${lossText(views, stepView.position, outCode)}` : ""}.${before > 0 ? ` Outros ${formatCount(before)} já tinham saído em passos anteriores.` : ""}`
-          : `${plural(excluded, "registro saiu", "registros saíram")} ao longo dos passos. Escolha um passo ou um motivo para ver só aqueles.`;
+          ? `${plural(codeLost, "linha saiu", "linhas saíram")} no passo ${stepView.position} (${KIND_WORD[stepView.kind].toLowerCase()})${outCode ? ` por: ${lossText(views, stepView.position, outCode)}` : ""}.${before > 0 ? ` Outros ${formatCount(before)} já tinham saído em passos anteriores.` : ""}`
+          : `${plural(excluded, "linha saiu", "linhas saíram")} ao longo dos passos. Escolha um passo ou um motivo para ver só aqueles.`;
 
   return (
     <div className="grid gap-3">
       {groups.length > 1 && filter.kind !== "out" && (
         <label className="flex flex-wrap items-center gap-2 text-[14.5px]">
-          <span>Registros do grupo</span>
+          <span>Linhas do grupo</span>
           <select
             className="select"
             value={resultNo}
@@ -301,13 +300,13 @@ export function Records({ run, base, question, views, groups, resultNo, entering
           >
             {groups.map((candidate) => (
               <option key={candidate.resultNo} value={candidate.resultNo}>
-                {candidate.key === null ? "sem correspondência" : candidate.label}
+                {candidate.key === null ? "sem valor no recorte" : candidate.label}
               </option>
             ))}
           </select>
         </label>
       )}
-      <div className="rec-tools" role="group" aria-label="Filtrar registros">
+      <div className="rec-tools" role="group" aria-label="Filtrar linhas">
         <button type="button" className="chip" aria-pressed={filter.kind === "in"} onClick={() => pick({ kind: "in" })}>
           entram <b>{formatCount(entering)}</b>
         </button>
@@ -352,7 +351,7 @@ export function Records({ run, base, question, views, groups, resultNo, entering
         (contributors.isError ? (
           <ErrorBlock error={contributors.error} onRetry={() => contributors.refetch()} />
         ) : !contributors.data ? (
-          <LoadingBlock label="Carregando registros" />
+          <LoadingBlock label="Carregando linhas" />
         ) : (
           <div className="grid gap-2">
             {distinct && (
@@ -363,7 +362,7 @@ export function Records({ run, base, question, views, groups, resultNo, entering
             )}
             <div className="rt-wrap" aria-busy={contributors.isFetching}>
               <div className="rt-scroll">
-                <table className="rt" aria-label="Registros que entram na resposta">
+                <table className="rt" aria-label="Linhas que entram na resposta">
                   <thead>
                     <tr>
                       <th scope="col">linha</th>
@@ -379,9 +378,10 @@ export function Records({ run, base, question, views, groups, resultNo, entering
                     {contributors.data.data.map((row) => {
                       const status = row.measure_values.find((measure) => measure.measure === ANSWER)?.status ?? null;
                       const [tone, text] = status ? STATUS[status] : ["in", "conta"];
+                      const open = () => onSelect({ rowId: row.id, context: { kind: "in", status } });
                       return (
-                        <tr key={row.id} {...rowProps(row.id, selected?.rowId === row.id, () => onSelect({ rowId: row.id, context: { kind: "in", status } }))}>
-                          <td>{row.line_number}</td>
+                        <tr key={row.id} {...rowProps(open)}>
+                          <OpenCell id={row.id} line={row.line_number} selected={selected?.rowId === row.id} open={open} />
                           <ValueCells row={row} columns={columns} />
                           <td>
                             <span className={`tagx ${tone}`}>{text}</span>
@@ -402,11 +402,11 @@ export function Records({ run, base, question, views, groups, resultNo, entering
         (exclusions.isError ? (
           <ErrorBlock error={exclusions.error} onRetry={() => exclusions.refetch()} />
         ) : !exclusions.data ? (
-          <LoadingBlock label="Carregando registros que saíram" />
+          <LoadingBlock label="Carregando linhas que saíram" />
         ) : (
           <div className="rt-wrap" aria-busy={exclusions.isFetching}>
             <div className="rt-scroll">
-              <table className="rt" aria-label="Registros que ficaram de fora">
+              <table className="rt" aria-label="Linhas que ficaram de fora">
                 <thead>
                   <tr>
                     <th scope="col">linha</th>
@@ -423,10 +423,10 @@ export function Records({ run, base, question, views, groups, resultNo, entering
                   {exclusions.data.data.map((exclusion) => {
                     const row = exclusion.sources.find((source) => source.input === 0)?.row ?? null;
                     const reason = lossText(views, exclusion.step_position, exclusion.code) ?? exclusion.label;
-                    const props = row ? rowProps(row.id, selected?.rowId === row.id, () => onSelect({ rowId: row.id, context: { kind: "out", exclusion } })) : {};
+                    const open = row ? () => onSelect({ rowId: row.id, context: { kind: "out", exclusion } }) : null;
                     return (
-                      <tr key={exclusion.tuple_no} {...props}>
-                        <td>{row?.line_number ?? "—"}</td>
+                      <tr key={exclusion.tuple_no} {...(open ? rowProps(open) : {})}>
+                        {row && open ? <OpenCell id={row.id} line={row.line_number} selected={selected?.rowId === row.id} open={open} /> : <td>—</td>}
                         {outStep === null && <td>{exclusion.step_position}</td>}
                         <ValueCells row={row} columns={columns} />
                         <td>
@@ -438,7 +438,7 @@ export function Records({ run, base, question, views, groups, resultNo, entering
                   {exclusions.data.data.length === 0 && (
                     <tr>
                       <td colSpan={columns.length + 3} className="empty">
-                        Nenhum registro saiu {outStep !== null ? "neste passo" : "nesta pergunta"}.
+                        Nenhuma linha saiu {outStep !== null ? "neste passo" : "nesta pergunta"}.
                       </td>
                     </tr>
                   )}
@@ -515,7 +515,7 @@ export function RecordDetail({ run, views, selected, onClose }: DetailProps) {
   };
 
   if (journey.isError) return <ErrorBlock error={journey.error} onRetry={() => journey.refetch()} />;
-  if (!journey.data) return <LoadingBlock label="Carregando o registro completo" />;
+  if (!journey.data) return <LoadingBlock label="Carregando a linha completa" />;
 
   const data = journey.data.data;
   const order = run.inputs[data.row.input]?.columns.map((column) => column.key) ?? [];

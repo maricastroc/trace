@@ -6,7 +6,7 @@ import { formatCount, formatPercent } from "@/lib/format";
 import { useRelationships } from "@/lib/queries";
 import type { ComparisonEquivalence, EquivalenceDeclaration } from "@/lib/types";
 import { column, type Catalog } from "@/features/perguntas/model/catalog";
-import { declarationFor, equivalenceOf, type Pair } from "../model/spec";
+import { declarationFor, equivalenceOf, relationGap, type EquivalenceState, type Pair } from "../model/spec";
 
 const TYPE_WORD: Record<string, string> = { identifier: "identificador", number: "número", date: "data", text: "texto" };
 
@@ -35,12 +35,22 @@ function Profile({ catalog, field }: { catalog: Catalog; field: Pair["a"] }) {
   );
 }
 
-type Props = { catalog: Catalog; pair: Pair | null; declaration: EquivalenceDeclaration | null; onChange: (declaration: EquivalenceDeclaration | null) => void };
+type Props = {
+  catalog: Catalog;
+  pair: Pair | null;
+  declaration: EquivalenceDeclaration | null;
+  onChange: (declaration: EquivalenceDeclaration | null) => void;
+  askAlways?: boolean;
+};
 
-export function EquivalenceCheck({ catalog, pair, declaration, onChange }: Props) {
+export function EquivalenceCheck({ catalog, pair, declaration, onChange, askAlways = false }: Props) {
   const ids = useId();
   const relationships = useRelationships();
-  const state = equivalenceOf(catalog, pair, declaration);
+  const computed = equivalenceOf(catalog, pair, declaration);
+  const state: EquivalenceState =
+    askAlways && computed.status === "map_declared"
+      ? { status: declaration ? "declared" : "unconfirmed", relation: computed.relation, gap: relationGap(catalog, computed.relation) }
+      : computed;
   if (!pair || state.status === "incomplete") return null;
 
   const a = fieldName(catalog, pair.a);
@@ -60,16 +70,14 @@ export function EquivalenceCheck({ catalog, pair, declaration, onChange }: Props
     );
   }
 
-  if (state.status === "relation" && relation) {
-    const from = fieldName(catalog, { table: relation.from.table, key: relation.from.column });
-    const to = fieldName(catalog, { table: relation.to.table, key: relation.to.column });
+  if (state.status === "map_declared" && relation) {
     return (
       <p className="eq-line">
-        <span className="eq-tag ok">referência confirmada no Mapa</span>A relação <span className="mono">{route}</span> foi confirmada no Mapa: cada valor de{" "}
-        <span className="mono">{from}</span> aponta para um único registro pela coluna <span className="mono">{to}</span>, que não se repete. Os dois lados usam os mesmos
-        identificadores.{" "}
+        <span className="eq-tag user">declarada no Mapa</span>
+        No Mapa, você declarou que <span className="mono">{a}</span> e <span className="mono">{b}</span> identificam a mesma entidade (relação <span className="mono">{route}</span>
+        ). O Trace não verificou essa equivalência.{" "}
         <Link className="btn-link" href={`/mapa?relacao=${relation.id}`}>
-          Ver a evidência
+          Rever no Mapa
         </Link>
       </p>
     );
@@ -96,17 +104,17 @@ export function EquivalenceCheck({ catalog, pair, declaration, onChange }: Props
             <span>
               A relação <span className="mono">{route}</span> do Mapa sugere estas colunas
               {evidence ? `: ${formatPercent(evidence.match.match_ratio)} das linhas de ${evidence.from.dataset_key} encontram o valor em ${evidence.to.dataset_key}` : ""}. Isso
-              aproxima as colunas, mas não prova que identificam a mesma entidade. Se uma coluna de fato referencia a outra, confirmar a relação no Mapa permite ler a comparação
-              como cadastro e referências.
+              aproxima as colunas, mas não prova que identificam a mesma entidade.
+            </span>
+          ) : state.gap === "join_only" ? (
+            <span>
+              A relação <span className="mono">{route}</span> está confirmada no Mapa: cada valor da origem que encontra par aponta para uma única linha do destino. Isso autoriza
+              usar a relação para ligar tabelas, mas não declara que as colunas identificam a mesma entidade.
             </span>
           ) : state.gap === "multiplicity" || state.gap === "target_repeats" ? (
             <span>
-              A relação <span className="mono">{route}</span> está confirmada no Mapa, mas o destino tem valores repetidos: ela não identifica um registro único e não basta para
+              A relação <span className="mono">{route}</span> está confirmada no Mapa, mas o destino tem valores repetidos: ela não aponta para um registro único e não basta para
               dizer que as colunas identificam a mesma entidade.
-            </span>
-          ) : state.gap === "one_to_one" ? (
-            <span>
-              A relação <span className="mono">{route}</span> está confirmada no Mapa, mas a origem também não se repete: uma relação um para um pode ligar entidades diferentes.
             </span>
           ) : state.gap === "review" ? (
             <span>
@@ -136,6 +144,16 @@ export function EquivalenceCheck({ catalog, pair, declaration, onChange }: Props
       <p className="small-note">
         Vale só para estas duas colunas: se uma delas mudar, será preciso confirmar de novo. Na comparação rastreada, fica registrado que a equivalência foi declarada por você, não
         verificada pelo Trace.
+        {relation && relation.standing !== "rejected" && (
+          <>
+            {" "}
+            Para não confirmar de novo em outras comparações, declare a identidade na{" "}
+            <Link className="btn-link" href={`/mapa?relacao=${relation.id}`}>
+              relação do Mapa
+            </Link>
+            .
+          </>
+        )}
       </p>
     </div>
   );
@@ -159,7 +177,7 @@ export function EquivalenceGate({
       <p className="eyebrow eyebrow-ab">Comparação · antes de ver o resultado</p>
       <h1 id="cmp-gate-title">Confirme o que está sendo comparado</h1>
       <p className="cs-lede">{equivalence.statement}</p>
-      <EquivalenceCheck catalog={catalog} pair={pair} declaration={declaration} onChange={setDeclaration} />
+      <EquivalenceCheck catalog={catalog} pair={pair} declaration={declaration} onChange={setDeclaration} askAlways />
       <div className="cs-actions">
         <button type="button" className="btn btn-primary" disabled={!declaration} onClick={() => declaration && onConfirm(declaration)}>
           Comparar

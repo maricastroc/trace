@@ -225,9 +225,9 @@ export function RuleBody({
   return (
     <>
       <div className="statusline">
-        <span className="proof proven">
+        <span className="proof declared">
           <i aria-hidden />
-          par pela regra aceita
+          declarado · regra aceita por você
         </span>
         <span className="mono small">contam como nos dois</span>
       </div>
@@ -315,7 +315,10 @@ export function IdentityDetail({ result, identity, labels, trace }: { result: Re
         note: `Candidato ${value}: escrito de outro jeito, é um dos ${formatCount(Number(identity.detail?.count ?? candidates.length))} valores possíveis. Com mais de um candidato, nenhum par é feito.`,
       }));
     if (identity.explanation === "variant_of_matched" && candidates.length)
-      return candidates.map((value) => ({ value, note: `${value} já tem par exato. Por isso ${identity.identity} não vira um segundo par para a mesma identidade.` }));
+      return candidates.map((value) => ({
+        value,
+        note: `${value} já tem par exato. Por isso ${identity.identity} não vira um segundo par: os dois podem ser a mesma identidade.`,
+      }));
     if (identity.explanation === "excluded_in_other") return [{ value: identity.identity, note: "Linhas com o mesmo texto que saíram da seleção deste lado, com o motivo." }];
     return [
       {

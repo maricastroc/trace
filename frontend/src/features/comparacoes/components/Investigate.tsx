@@ -1,11 +1,12 @@
 "use client";
 
+import { RowOpen } from "@/components/ui/RowOpen";
 import { useState } from "react";
 import { ErrorBlock, LoadingBlock } from "@/components/ui/ScreenStates";
 import { formatCount, plural } from "@/lib/format";
 import { useComparisonIdentities, useComparisonRows, type IdentityFilters } from "@/lib/queries";
 import type { ComparisonCategory, ComparisonExplanation, ComparisonIdentity } from "@/lib/types";
-import { causes, explanationText, proofOf, type Labels } from "../model/reconciliation";
+import { causes, explanationText, proofLabel, proofOf, type Labels } from "../model/reconciliation";
 import type { ResultModel } from "../model/result";
 import { describeSelection, RULE_TEXT, type Side } from "../model/spec";
 import { causeTarget } from "./StepSide";
@@ -35,7 +36,7 @@ export function statusWord(identity: Pick<ComparisonIdentity, "category" | "expl
     case "ambiguous_match":
       return { text: "ambígua", tone: "pos" };
     case "variant_of_matched":
-      return { text: "variante de uma pareada", tone: "pos" };
+      return { text: "parecida com uma pareada", tone: "pos" };
     default:
       return { text: "não encontrada", tone: "out" };
   }
@@ -158,20 +159,12 @@ function IdentityTable({ items, labels, onPick, caption }: { items: ComparisonId
             {items.map((identity) => {
               const status = statusWord(identity);
               return (
-                <tr
-                  key={`${identity.category}-${identity.identity}`}
-                  className="clickable"
-                  tabIndex={0}
-                  aria-label={`Identidade ${identity.identity}, ${status.text}. Abrir as linhas de origem.`}
-                  onClick={() => onPick(identity)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onPick(identity);
-                    }
-                  }}
-                >
-                  <td className="mono">{identity.category === "shared_by_rule" ? `${identity.a_value} ↔ ${identity.b_value}` : identity.identity}</td>
+                <tr key={`${identity.category}-${identity.identity}`} className="clickable" onClick={() => onPick(identity)}>
+                  <td className="mono">
+                    <RowOpen label={`Identidade ${identity.identity}, ${status.text}. Abrir as linhas de origem.`} onOpen={() => onPick(identity)}>
+                      {identity.category === "shared_by_rule" ? `${identity.a_value} ↔ ${identity.b_value}` : identity.identity}
+                    </RowOpen>
+                  </td>
                   <td className="mono r">{formatCount(identity.a_rows)}</td>
                   <td className="mono r">{formatCount(identity.b_rows)}</td>
                   <td>
@@ -258,7 +251,7 @@ function Proof({ explanation }: { explanation: ComparisonExplanation }) {
   return (
     <span className={`proof ${possible ? "possible" : "proven"}`}>
       <i aria-hidden />
-      {possible ? "possível · hipótese" : "comprovado pelos dados"}
+      {proofLabel(explanation)}
     </span>
   );
 }
@@ -300,7 +293,9 @@ export function CauseBody({ side, explanation, result, labels, trace, onPick }: 
           <p className="small-note">Aceitar uma regra não pareia estas identidades: com mais de um candidato, qualquer escolha seria arbitrária.</p>
         )}
         {explanation === "variant_of_matched" && (
-          <p className="small-note">Mesmo com a regra aceita, estas continuam sem par: a outra grafia já tem par exato, e um segundo par contaria a mesma identidade duas vezes.</p>
+          <p className="small-note">
+            Mesmo com a regra aceita, estas continuam sem par: o valor parecido já tem par exato, e um segundo par poderia contar a mesma identidade duas vezes.
+          </p>
         )}
       </Section>
       <Section title="Contagem">
@@ -340,7 +335,7 @@ export function OnlyBody({ side, result, labels, onOpen }: PanelProps & { side: 
             </span>
             <span className={`proof ${cause.proof}`}>
               <i aria-hidden />
-              {cause.proof === "possible" ? "possível" : "comprovado"}
+              {proofLabel(cause.explanation, true)}
             </span>
             <span className="ld">{cause.sub}</span>
           </button>

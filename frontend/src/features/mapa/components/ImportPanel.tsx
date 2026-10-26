@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { useToast } from "@/components/ui/Toast";
+import { ApiError } from "@/lib/api";
 import { formatCount, plural } from "@/lib/format";
 import { useImportFile, useImportPreview, useMeta } from "@/lib/queries";
 import type { ImportPreview } from "@/lib/types";
@@ -27,6 +28,33 @@ function sizeLabel(bytes: number) {
   return `${Number.isInteger(mb) ? mb : mb.toFixed(1).replace(".", ",")} MB`;
 }
 
+function problemDetail(error: Error) {
+  if (!(error instanceof ApiError)) return null;
+  const details = error.details as { examples?: { line: number; expected: number; found: number }[]; total?: number; position?: number };
+  if (error.code === "csv.ragged_rows" && details.examples?.length) {
+    const lines = details.examples.map((example) => `linha ${example.line}: ${example.found} em vez de ${example.expected}`).join("; ");
+    const more = (details.total ?? 0) > details.examples.length ? ` e mais ${formatCount((details.total ?? 0) - details.examples.length)}` : "";
+    return `Colunas por linha (${lines}${more}).`;
+  }
+  if ((error.code === "csv.empty_header" || error.code === "csv.header_too_long") && details.position) return `Posição da coluna no cabeçalho: ${details.position}.`;
+  return null;
+}
+
+function ImportError({ error }: { error: Error }) {
+  const detail = problemDetail(error);
+  return (
+    <p role="alert" className="small-note mt-3 text-b-deep">
+      {error.message}
+      {detail && (
+        <>
+          <br />
+          {detail}
+        </>
+      )}
+    </p>
+  );
+}
+
 export function ImportPanel({ model, target, onDone, onCancel }: Props) {
   const meta = useMeta();
   const preview = useImportPreview();
@@ -38,6 +66,7 @@ export function ImportPanel({ model, target, onDone, onCancel }: Props) {
   const [mode, setMode] = useState<"new" | "version">(target ? "version" : "new");
   const [name, setName] = useState("");
   const [destination, setDestination] = useState(target ?? model.tables[0]?.key ?? "");
+  const [tooLarge, setTooLarge] = useState<string | null>(null);
 
   const limits = meta.data?.data.limits;
   const enabled = meta.data?.data.uploads_enabled ?? true;
@@ -49,6 +78,12 @@ export function ImportPanel({ model, target, onDone, onCancel }: Props) {
     setFile(chosen);
     setName(baseName(chosen.name));
     save.reset();
+    if (limits && chosen.size > limits.upload_kb * 1024) {
+      preview.reset();
+      setTooLarge(`O arquivo tem ${sizeLabel(chosen.size)}; esta instalação aceita até ${sizeLabel(limits.upload_kb * 1024)}. Divida o arquivo ou reduza as colunas antes de enviar.`);
+      return;
+    }
+    setTooLarge(null);
     preview.mutate(chosen);
   };
 
@@ -103,11 +138,12 @@ export function ImportPanel({ model, target, onDone, onCancel }: Props) {
             Lendo o arquivo…
           </p>
         )}
-        {preview.error && (
+        {tooLarge && (
           <p role="alert" className="small-note mt-3 text-b-deep">
-            {preview.error.message}
+            {tooLarge}
           </p>
         )}
+        {preview.error && <ImportError error={preview.error} />}
       </section>
 
       {read && <ReadSummary read={read} />}
@@ -150,16 +186,12 @@ export function ImportPanel({ model, target, onDone, onCancel }: Props) {
               {existing && <VersionDiff before={existing.columns.map((c) => c.key)} after={read.columns.map((c) => c.key)} table={existing.key} next={existing.versionNumber + 1} />}
             </div>
           )}
-          {save.error && (
-            <p role="alert" className="small-note mt-3 text-b-deep">
-              {save.error.message}
-            </p>
-          )}
+          {save.error && <ImportError error={save.error} />}
           <div className="panel-actions mt-4">
             <button type="button" className="btn btn-ab" disabled={save.isPending || (mode === "version" && !existing)} onClick={submit}>
               {save.isPending ? "Importando…" : mode === "version" ? "Importar nova versão" : "Importar tabela"}
             </button>
-            <button type="button" className="btn btn-quiet" onClick={onCancel}>
+            <button type="button" className="btn btn-quiet" disabled={save.isPending} onClick={onCancel}>
               Cancelar
             </button>
           </div>

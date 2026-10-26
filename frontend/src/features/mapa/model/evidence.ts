@@ -190,7 +190,7 @@ export function checksFor(r: Relationship, all: Relationship[]): Check[] {
       key: `comp-${c.id}`,
       state: "hyp",
       title: "Destino concorrente",
-      text: `${r.from.dataset_key}.${r.from.column} também se liga a ${c.to.dataset_key}.${c.to.column}: cobertura ${formatPercent(c.evidence.match.match_ratio)}, destino ${c.evidence.to.unique ? "único" : "com repetidos"}. Só uma deve valer.`,
+      text: `Os valores de ${r.from.dataset_key}.${r.from.column} também têm correspondência em ${c.to.dataset_key}.${c.to.column} (outra sugestão): cobertura ${formatPercent(c.evidence.match.match_ratio)}, destino ${c.evidence.to.unique ? "único" : "com repetidos"}. Só uma deve valer.`,
       relationId: c.id,
     });
   }

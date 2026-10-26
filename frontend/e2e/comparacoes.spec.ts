@@ -22,7 +22,7 @@ async function fresh(page: Page, request: APIRequestContext, scenario: ScenarioK
     [token, scenario],
   );
   const headers = { "X-Trace-Workspace": token, Accept: "application/json" };
-  const call = async <T>(method: "GET" | "POST", path: string, data?: unknown): Promise<T> => {
+  const call = async <T>(method: "GET" | "POST" | "DELETE", path: string, data?: unknown): Promise<T> => {
     const response = await request.fetch(`${API_URL}${path}`, { method, headers, data });
     expect(response.ok(), `${method} ${path} → ${response.status()}`).toBe(true);
     return (await response.json()) as T;
@@ -129,7 +129,7 @@ test("the sets and identifiers are chosen explicitly, and the reference case sep
   await expect(result).toContainText("80identidades sem par exato63 só em Beneficiários + 17 só em Atendimentos com data em 2025");
   await expect(result).toContainText("A diferença nos totais é menor que o número de identidades sem par");
   await result.getByText("Linhas e identidades").click();
-  await expect(result).toContainText("Beneficiários tem 1.248 linhas = 1.242 identidades (6 linhas repetidas)");
+  await expect(result).toContainText("Beneficiários tem 1.248 linhas e 1.242 identidades distintas (6 linhas repetem uma identidade já contada)");
 
   await step(page, 1, "Fontes").click();
   await expect(step(page, 1, "Fontes")).toHaveAttribute("aria-current", "step");
@@ -191,7 +191,7 @@ test("fields without evidence need an explicit confirmation for that exact pair,
   await expect(answer(page)).toContainText("Nenhuma identidade aparece nos dois lados");
   await expect(answer(page)).not.toContainText("cadastrados");
   await answer(page).getByText("Linhas e identidades").click();
-  await expect(answer(page)).toContainText("Pessoas sintéticas tem 464 linhas = 463 identidades (1 linha repetida)");
+  await expect(answer(page)).toContainText("Pessoas sintéticas tem 464 linhas e 463 identidades distintas (1 linha repete uma identidade já contada)");
   await expect(page.locator(".zero-tag:not(.gone)")).toHaveText("nenhuma identidade nos dois");
   await expect(page.locator(".ptab.a")).toContainText("463A · Pessoas sintéticas · identidades");
   await expect(current(page).getByRole("button", { name: /^0 nos dois/ })).toBeVisible();
@@ -238,11 +238,16 @@ test("fields without evidence need an explicit confirmation for that exact pair,
   await side(page, "A").getByLabel("Coluna identificadora").selectOption("id");
   await pickTable(page, "B", "refeicoes");
   await side(page, "B").getByLabel("Coluna identificadora").selectOption("id");
-  await expect(page.locator(".eq-box")).toContainText("está confirmada no Mapa, mas a origem também não se repete: uma relação um para um pode ligar entidades diferentes.");
+  await expect(page.locator(".eq-box")).toContainText(
+    "A relação refeicoes.id → cozinhas.id está confirmada no Mapa: cada valor da origem que encontra par aponta para uma única linha do destino. Isso autoriza usar a relação para ligar tabelas, mas não declara que as colunas identificam a mesma entidade.",
+  );
   await expect(compareButton(page)).toBeDisabled();
 });
 
-test("a confirmed reference reads as registry against references, with plain counts per category and signs only in the account", async ({ page, request }) => {
+test("a reference declared as identity in the Mapa reads as registry against references, with plain counts per category and signs only in the account", async ({
+  page,
+  request,
+}) => {
   const api = await fresh(page, request, "refeicoes", true);
   const relation = (await api.call<{ data: { id: string; from: { dataset_key: string; column: string } }[] }>("GET", "/relationships")).data.find(
     (r) => r.from.dataset_key === "refeicoes" && r.from.column === "cozinha_id",
@@ -251,7 +256,19 @@ test("a confirmed reference reads as registry against references, with plain cou
 
   await page.goto("/comparacoes");
   await expect(page.getByRole("button", { name: /Cozinhas × Refeições com data em 2026/ })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".eq-line")).toContainText("cada valor de refeicoes.cozinha_id aponta para um único registro pela coluna cozinhas.id");
+  await expect(page.locator(".eq-box")).toContainText("Isso autoriza usar a relação para ligar tabelas, mas não declara que as colunas identificam a mesma entidade.");
+  await expect(confirmation(page)).toBeVisible();
+  await expect(compareButton(page)).toBeDisabled();
+
+  await page.goto(`/mapa?relacao=${relation.id}`);
+  const identity = page.getByRole("region", { name: "Mesma entidade?" });
+  await expect(identity).toContainText("Confirmar a relação autoriza usá-la para ligar tabelas.");
+  await identity.getByRole("button", { name: "Declarar que identificam a mesma entidade" }).click();
+  await expect(identity).toContainText("você declarou que refeicoes.cozinha_id e cozinhas.id identificam a mesma entidade");
+  await expect(identity.getByRole("button", { name: "Retirar a declaração" })).toBeVisible();
+
+  await page.goto("/comparacoes");
+  await expect(page.locator(".eq-line")).toContainText("No Mapa, você declarou que cozinhas.id e refeicoes.cozinha_id identificam a mesma entidade");
   await expect(confirmation(page)).toHaveCount(0);
   await compareButton(page).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Por que Cozinhas e Refeições com data em 2026 têm 15 identidades cada, mas não as mesmas?");
@@ -277,17 +294,17 @@ test("a confirmed reference reads as registry against references, with plain cou
   await expect(current(page).getByRole("group", { name: "15 menos 2 mais 2 igual a 15 identidades" })).toBeVisible();
   await expect(current(page).locator(".lg-op")).toHaveText(["", "−", "+", "="]);
   await step(page, 1, "Fontes").click();
-  await expect(current(page)).toContainText("referência confirmada no Mapa");
+  await expect(current(page)).toContainText("declarada no Mapa");
 
   await page.getByRole("button", { name: "Rastrear a comparação" }).click();
   await expect(page.getByText("rastreada", { exact: true })).toBeVisible({ timeout: 30_000 });
   const traced = page.url();
-  await api.call("POST", `/relationships/${relation.id}/reopen`);
+  await api.call("DELETE", `/relationships/${relation.id}/identity`);
   await page.goto(traced);
   await expect(answer(page)).toContainText(meaning);
   await page.getByRole("button", { name: "Comparar com os dados atuais" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Confirme o que está sendo comparado");
-  await expect(page.locator(".eq-box")).toContainText("do Mapa sugere estas colunas");
+  await expect(page.locator(".eq-box")).toContainText("Isso autoriza usar a relação para ligar tabelas, mas não declara");
 });
 
 test("identical sets have nothing to explain, and a different period is attributed to the criterion with its excluded rows", async ({ page, request }) => {
@@ -348,7 +365,7 @@ test("a possible match shows the rule, its effect and examples before being acce
   await compareReference(page);
   await step(page, 3, "Classificar").click();
   await current(page)
-    .getByRole("button", { name: /^14 possível: a mesma identidade escrita de outro jeito existe em Atendimentos/ })
+    .getByRole("button", { name: /^14 pode ser a mesma identidade escrita de outro jeito há em Atendimentos/ })
     .click();
   const hypothesis = panel(page, "14 pares possíveis");
   await expect(hypothesis).toContainText("possível · hipótese");
@@ -423,7 +440,7 @@ test("an ambiguous match stays unpaired, shows every candidate, and survives an 
   await page.keyboard.press("Escape");
 
   await current(page)
-    .getByRole("button", { name: /^1 possível: a mesma identidade escrita de outro jeito existe em Codigos b/ })
+    .getByRole("button", { name: /^1 pode ser a mesma identidade escrita de outro jeito há em Codigos b/ })
     .click();
   const hypothesis = panel(page, "1 par possível");
   await expect(hypothesis).toContainText("+1 par pela regra");
@@ -466,8 +483,8 @@ test("a variant of an already matched identity is named but never paired, and ro
     .first()
     .click();
   const identity = page.getByRole("dialog").filter({ hasText: "Voltar à lista" });
-  await expect(identity).toContainText("variante de uma pareada");
-  await expect(identity).toContainText("0187 já tem par exato. Por isso 187 não vira um segundo par para a mesma identidade.");
+  await expect(identity).toContainText("parecida com uma pareada");
+  await expect(identity).toContainText("0187 já tem par exato. Por isso 187 não vira um segundo par: os dois podem ser a mesma identidade.");
   await expect(identity.getByRole("table", { name: "Linhas de cozinhas com 0187" })).toContainText("selecionada");
   await expect(identity.getByRole("table", { name: "Linhas de refeicoes com 187" })).toContainText("selecionada");
 
@@ -508,7 +525,7 @@ test("traced identities open page by page with their source rows, and the histor
   const first = (await cause.getByRole("table", { name: "Identidades" }).locator("tbody tr td").first().textContent()) ?? "";
   await cause.getByPlaceholder("Procurar uma identidade").fill(first);
   await expect(cause.getByRole("table", { name: "Identidades" }).locator("tbody tr")).toHaveCount(1);
-  await cause.getByRole("table", { name: "Identidades" }).locator("tbody tr").first().focus();
+  await cause.getByRole("table", { name: "Identidades" }).locator("tbody tr").first().getByRole("button").focus();
   await page.keyboard.press("Enter");
   const identity = page.getByRole("dialog").filter({ hasText: "Voltar à lista" });
   await expect(identity.getByRole("heading", { level: 2 })).toHaveText(first);

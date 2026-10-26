@@ -77,7 +77,11 @@ function Item({ item, currentRunId }: { item: ComparisonListItem; currentRunId: 
         <p className="h-name">{item.name}</p>
         {run && <Sides run={run} />}
         <p className="h-meta">
-          {run?.equivalence && <span className={`eq-tag ${run.equivalence.status === "declared" ? "user" : "ok"}`}>{EQUIVALENCE_TAG[run.equivalence.status]}</span>}
+          {run?.equivalence && (
+            <span className={`eq-tag ${run.equivalence.status === "declared" || run.equivalence.status === "map_declared" ? "user" : "ok"}`}>
+              {EQUIVALENCE_TAG[run.equivalence.status]}
+            </span>
+          )}
           {item.spec.rules.length ? `regra aceita: ${item.spec.rules.map((rule) => RULE_TEXT[rule].name).join(", ")}` : "sem regra de normalização"} · {formatCount(item.runs)}{" "}
           {item.runs === 1 ? "execução" : "execuções"}
           {run ? ` · última ${STATUS[run.status]} em ${formatWhen(run.finished_at ?? run.queued_at)}` : ""}

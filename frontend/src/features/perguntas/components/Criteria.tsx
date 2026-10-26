@@ -93,8 +93,8 @@ export function Criteria({ catalog, base, question, notes }: CriteriaProps) {
         {question.dimension && dimension && (
           <p>
             {question.dimension.value === null
-              ? `Agrupa por ${dimension.table.key}.${dimension.column}${dimension.labelColumn ? `, com o rótulo de ${dimension.labelColumn}` : ""}. Quem não encontra correspondência continua no total, num grupo próprio.`
-              : `Mantém só ${dimension.table.key}.${dimension.column} = ${question.dimension.value}. Quem não encontra correspondência sai na ligação, com o motivo.`}
+              ? `Agrupa por ${dimension.table.key}.${dimension.column}${dimension.labelColumn ? `, com o rótulo de ${dimension.labelColumn}` : ""}. ${relations.length > 0 ? "Linhas vazias ou sem par na ligação" : `Linhas com ${dimension.column} vazio`} continuam no total, num grupo próprio.`
+              : `Mantém só ${dimension.table.key}.${dimension.column} = ${question.dimension.value}. ${relations.length > 0 ? "Linhas vazias ou sem par saem na ligação" : `Linhas com outro valor ou vazias saem no recorte`}, com o motivo.`}
           </p>
         )}
         {relations.length > 0 && (

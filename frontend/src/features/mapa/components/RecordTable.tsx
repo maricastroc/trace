@@ -1,5 +1,6 @@
 "use client";
 
+import { RowOpen } from "@/components/ui/RowOpen";
 import { formatCount } from "@/lib/format";
 import type { PageMeta, SourceRow } from "@/lib/types";
 import { ErrorBlock, LoadingBlock } from "@/components/ui/ScreenStates";
@@ -38,23 +39,16 @@ export function RecordTable({ label, columns, rows, meta, loading, error, onRetr
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr
-                key={row.id}
-                className={onRow ? "clickable" : undefined}
-                tabIndex={onRow ? 0 : undefined}
-                onClick={onRow ? () => onRow(row) : undefined}
-                onKeyDown={
-                  onRow
-                    ? (event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          onRow(row);
-                        }
-                      }
-                    : undefined
-                }
-              >
-                <td>{row.line_number}</td>
+              <tr key={row.id} className={onRow ? "clickable" : undefined} onClick={onRow ? () => onRow(row) : undefined}>
+                <td>
+                  {onRow ? (
+                    <RowOpen label={`Abrir a linha ${row.line_number} do arquivo`} onOpen={() => onRow(row)}>
+                      {row.line_number}
+                    </RowOpen>
+                  ) : (
+                    row.line_number
+                  )}
+                </td>
                 {columns.map((column) => {
                   const value = row.values[column];
                   return (

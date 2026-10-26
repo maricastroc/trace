@@ -205,7 +205,9 @@ export function StepSide({ result, catalog, stage, labels, openKey, onStage, onO
             <dd>
               {result.equivalence ? (
                 <>
-                  <span className={`eq-tag ${result.equivalence.status === "declared" ? "user" : result.equivalence.status === "unconfirmed" ? "warn" : "ok"}`}>
+                  <span
+                    className={`eq-tag ${result.equivalence.status === "declared" || result.equivalence.status === "map_declared" ? "user" : result.equivalence.status === "unconfirmed" ? "warn" : "ok"}`}
+                  >
                     {EQUIVALENCE_TAG[result.equivalence.status]}
                   </span>{" "}
                   {result.equivalence.statement}
@@ -239,7 +241,8 @@ export function StepSide({ result, catalog, stage, labels, openKey, onStage, onO
       <>
         <Head n={2} title="Alinhar pela chave" />
         <p className="step-note">
-          Onde o azul e o rosa se sobrepõem (violeta), a identidade está nos dois lados. À esquerda ficam as que só estão em A; à direita, as que só estão em B.
+          No meio, onde as duas faixas se sobrepõem (violeta), ficam as identidades que estão nos dois lados. À esquerda ficam as que só estão em A (azul); à direita, as que só
+          estão em B (rosa).
           {summary.shared_by_rule > 0 && ` ${formatCount(summary.shared_by_rule)} das que estão nos dois foram pareadas pela regra aceita.`}
         </p>
         <div className="align-stats">
@@ -294,7 +297,7 @@ export function StepSide({ result, catalog, stage, labels, openKey, onStage, onO
           <p className="step-note">Não há sobras: todas as identidades dos dois lados têm par.</p>
         ) : (
           <>
-            <p className="step-note">Escolha uma causa para destacá-la e ver o critério, a chave e os registros.</p>
+            <p className="step-note">Escolha uma causa para destacá-la e ver o critério, a chave e as linhas.</p>
             <div className="cat-groups">
               {groups.map((group) => (
                 <section key={group.key} className={`cat-g ${group.key === "possible" ? "hyp" : ""}`}>

@@ -17,8 +17,8 @@ export const READINGS: ValidityReading[] = ["started", "active_any", "active_at_
 
 export const READING_TITLE: Record<ValidityReading, string> = {
   started: "Começaram em",
-  active_any: "Estiveram ativos em algum momento de",
-  active_at_end: "Estavam ativos no último dia de",
+  active_any: "Estiveram vigentes em algum momento de",
+  active_at_end: "Estavam vigentes no último dia de",
 };
 
 export const READING_HINT: Record<ValidityReading, string> = {
@@ -64,8 +64,8 @@ function hasUniqueId(table: CatalogTable) {
 export function measureOptions(catalog: Catalog, base: CatalogTable): MeasureOption[] {
   const options: MeasureOption[] = [
     hasUniqueId(base)
-      ? { measure: { function: "count" }, label: "registros", hint: `cada linha de ${base.key} conta uma vez` }
-      : { measure: { function: "count" }, label: "linhas", hint: "cada linha conta, mesmo com id repetido" },
+      ? { measure: { function: "count" }, label: "registros", hint: `conta as linhas de ${base.key} que chegam ao cálculo; cópias criadas por uma ligação também contam` }
+      : { measure: { function: "count" }, label: "linhas", hint: "cada linha conta, mesmo com id repetido; cópias criadas por uma ligação também contam" },
   ];
   const id = column(base, "id");
   if (id && !id.profile.unique) {
@@ -76,11 +76,10 @@ export function measureOptions(catalog: Catalog, base: CatalogTable): MeasureOpt
     const target = catalog.byId.get(relation.to.table);
     if (!target || foreign.has(relation.from.column)) continue;
     foreign.add(relation.from.column);
-    const label = `${target.noun} diferentes`;
     options.push({
       measure: { function: "count_distinct", column: relation.from.column },
-      label: options.some((option) => option.label === label) ? `${label} por ${relation.from.column}` : label,
-      hint: `cada ${relation.from.column} conta uma vez`,
+      label: `valores diferentes de ${relation.from.column}`,
+      hint: `cada ${relation.from.column} conta uma vez, mesmo sem par em ${target.key}`,
     });
   }
   for (const candidate of base.columns) {
@@ -234,7 +233,7 @@ export function starterPeriod(base: CatalogTable): QuestionPeriod | null {
 function standingRank(catalog: Catalog, ids: string[]) {
   return ids.reduce((worst, id) => {
     const standing = catalog.relationById.get(id)?.standing;
-    const rank = standing === "confirmed" || standing === "caveat" ? 0 : standing === "suggested" ? 1 : 2;
+    const rank = standing === "confirmed" ? 0 : standing === "caveat" ? 1 : standing === "suggested" ? 2 : 3;
     return Math.max(worst, rank);
   }, 0);
 }
@@ -267,17 +266,16 @@ export function starterQuestion(catalog: Catalog, baseId?: string | null): Quest
   };
 }
 
-export function readingPhrase(reading: ValidityReading | null, feminine: boolean) {
-  const active = feminine ? "ativas" : "ativos";
+export function readingPhrase(reading: ValidityReading | null) {
   switch (reading) {
     case "started":
-      return "começaram em";
+      return "que começaram em";
     case "active_any":
-      return `estiveram ${active} em algum momento de`;
+      return "que estiveram vigentes em algum momento de";
     case "active_at_end":
-      return `estavam ${active} no último dia de`;
+      return "que estavam vigentes no último dia de";
     default:
-      return "estavam vigentes em";
+      return "vigentes em";
   }
 }
 
@@ -286,8 +284,23 @@ export function sentence(catalog: Catalog, question: QuestionSpec, valueLabel: s
   if (!base) return [];
   const measure = measureLabel(catalog, base, question.measure);
   const feminine = isFeminine(measure);
-  const parts: SentencePart[] = ["Em ", { kind: "source", text: base.noun, what: "a tabela" }, ", "];
-  parts.push(question.measure.function === "sum" ? "qual a " : feminine ? "quantas " : "quantos ");
+  const parts: SentencePart[] = ["Em ", { kind: "source", text: base.noun, what: "a tabela" }];
+
+  const period = question.period;
+  if (period?.kind === "date") {
+    parts.push(" ", { kind: "periodKind", text: `com ${period.column} em`, what: "a data usada" }, " ", { kind: "periodValue", text: periodLabel(period.from, period.to), what: "o período" });
+  } else if (period?.kind === "validity") {
+    parts.push(
+      " ",
+      { kind: "periodKind", text: readingPhrase(period.reading), what: "a leitura do período", pending: period.reading === null },
+      " ",
+      { kind: "periodValue", text: periodLabel(period.from, period.to), what: "o período" },
+    );
+  } else if (dateColumns(base).length > 0) {
+    parts.push(", ", { kind: "periodKind", text: "em qualquer data", what: "a data usada" });
+  }
+
+  parts.push(", ", question.measure.function === "sum" ? "qual a " : feminine ? "quantas " : "quantos ");
   parts.push({ kind: "measure", text: measure, what: "o que contar" });
 
   const option = currentDimension(catalog, base, question.dimension);
@@ -300,20 +313,6 @@ export function sentence(catalog: Catalog, question: QuestionSpec, valueLabel: s
   }
   if (option && pathAlternatives(catalog, base, option).length > 1) {
     parts.push(" ", { kind: "path", text: `via ${option.via}`, what: "o caminho até o recorte" });
-  }
-
-  const period = question.period;
-  if (period?.kind === "date") {
-    parts.push(" ", { kind: "periodKind", text: `com ${period.column} em`, what: "a data usada" }, " ", { kind: "periodValue", text: periodLabel(period.from, period.to), what: "o período" });
-  } else if (period?.kind === "validity") {
-    parts.push(
-      " ",
-      { kind: "periodKind", text: readingPhrase(period.reading, feminine), what: "a leitura do período", pending: period.reading === null },
-      " ",
-      { kind: "periodValue", text: periodLabel(period.from, period.to), what: "o período" },
-    );
-  } else if (dateColumns(base).length > 0) {
-    parts.push(" ", { kind: "periodKind", text: "em qualquer data", what: "a data usada" });
   }
   parts.push("?");
   return parts;

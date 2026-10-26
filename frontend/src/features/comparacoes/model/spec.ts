@@ -56,7 +56,7 @@ export function defaultLabel(side: SideDraft, naming: Naming) {
   const parts: string[] = [];
   const period = side.period;
   if (period?.kind === "date") parts.push(`com ${period.column} em ${periodLabel(period.from, period.to)}`);
-  if (period?.kind === "validity" && period.reading) parts.push(`que ${readingPhrase(period.reading, false)} ${periodLabel(period.from, period.to)}`);
+  if (period?.kind === "validity" && period.reading) parts.push(`${readingPhrase(period.reading)} ${periodLabel(period.from, period.to)}`);
   if (side.dimension?.value) parts.push(`com ${side.dimension.column} ${side.dimension.value}`);
   const version = side.versionId ? naming.versions?.[table.id]?.find((candidate) => candidate.id === side.versionId) : undefined;
   const base = version ? `${tableTitle(table)} (versão ${version.number})` : tableTitle(table);
@@ -73,6 +73,7 @@ export function sideSpec(side: SideDraft, naming?: Naming): ComparisonSpec["a"] 
     return side.runId && side.key ? { kind: "run", run_id: side.runId, key: side.key, label } : null;
   }
   if (!side.datasetId || !side.key) return null;
+  if (side.period?.kind === "validity" && side.period.reading === null) return null;
   return { kind: "population", dataset_id: side.datasetId, version_id: side.versionId, key: side.key, period: side.period, dimension: side.dimension, label };
 }
 
@@ -91,7 +92,7 @@ export function declares(declared: EquivalenceDeclaration | null | undefined, pa
   return !!declared && !!pair && declared.a.dataset_id === pair.a.table && declared.a.key === pair.a.key && declared.b.dataset_id === pair.b.table && declared.b.key === pair.b.key;
 }
 
-export type EquivalenceGap = "multiplicity" | "target_repeats" | "review" | "one_to_one" | "suggested" | "rejected" | "none";
+export type EquivalenceGap = "join_only" | "multiplicity" | "target_repeats" | "review" | "suggested" | "rejected" | "none";
 
 export type EquivalenceState = { status: EquivalenceStatus | "incomplete"; relation: CatalogRelation | null; gap: EquivalenceGap | null };
 
@@ -100,29 +101,31 @@ function isUnique(catalog: Catalog, tableId: string, key: string) {
   return table ? column(table, key)?.profile.unique === true : false;
 }
 
-export function relationGap(catalog: Catalog, relation: CatalogRelation | null): EquivalenceGap | null {
+export function relationGap(catalog: Catalog, relation: CatalogRelation | null): EquivalenceGap {
   if (!relation) return "none";
   if (relation.standing === "suggested") return "suggested";
   if (relation.standing === "rejected") return "rejected";
   if (relation.standing === "caveat") return "multiplicity";
   if (!isUnique(catalog, relation.to.table, relation.to.column)) return "target_repeats";
   if (relation.standing !== "confirmed") return "review";
-  if (isUnique(catalog, relation.from.table, relation.from.column)) return "one_to_one";
-  return null;
+  return "join_only";
 }
 
 export function equivalenceOf(catalog: Catalog, pair: Pair | null, declared: EquivalenceDeclaration | null | undefined): EquivalenceState {
   if (!pair) return { status: "incomplete", relation: null, gap: null };
   if (pair.a.table === pair.b.table && pair.a.key === pair.b.key) return { status: "same_field", relation: null, gap: null };
+  const preference = (candidate: CatalogRelation) =>
+    (candidate.identity && candidate.standing !== "rejected" ? 0 : 3) + (candidate.standing === "suggested" ? 1 : candidate.standing === "rejected" ? 2 : 0);
   const relation =
-    catalog.relations.find(
-      (candidate) =>
-        (candidate.from.table === pair.a.table && candidate.from.column === pair.a.key && candidate.to.table === pair.b.table && candidate.to.column === pair.b.key) ||
-        (candidate.from.table === pair.b.table && candidate.from.column === pair.b.key && candidate.to.table === pair.a.table && candidate.to.column === pair.a.key),
-    ) ?? null;
-  const gap = relationGap(catalog, relation);
-  if (gap === null) return { status: "relation", relation, gap };
-  return { status: declares(declared, pair) ? "declared" : "unconfirmed", relation, gap };
+    catalog.relations
+      .filter(
+        (candidate) =>
+          (candidate.from.table === pair.a.table && candidate.from.column === pair.a.key && candidate.to.table === pair.b.table && candidate.to.column === pair.b.key) ||
+          (candidate.from.table === pair.b.table && candidate.from.column === pair.b.key && candidate.to.table === pair.a.table && candidate.to.column === pair.a.key),
+      )
+      .sort((x, y) => preference(x) - preference(y))[0] ?? null;
+  if (relation?.identity && relation.standing !== "rejected") return { status: "map_declared", relation, gap: null };
+  return { status: declares(declared, pair) ? "declared" : "unconfirmed", relation, gap: relationGap(catalog, relation) };
 }
 
 export function toSpec(draft: Draft, naming?: Naming): ComparisonSpec | null {

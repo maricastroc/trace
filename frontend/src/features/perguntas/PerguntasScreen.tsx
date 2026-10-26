@@ -28,6 +28,7 @@ import {
   measureOptions,
   plainText,
   READING_TITLE,
+  readingPhrase,
   sentence,
   starterQuestion,
 } from "./model/question";
@@ -85,9 +86,27 @@ function sameTotals(a: RunTotals | null | undefined, b: RunTotals | null | undef
   return a.groups === b.groups && same(a.values, b.values) && same(a.sum_of_groups, b.sum_of_groups);
 }
 
+const versionsOf = (list: { version_id: string }[]) => list.map((input) => input.version_id).join("|");
+
 function matches(run: RunDetail, preview: Preview) {
-  const versions = (list: { version_id: string }[]) => list.map((input) => input.version_id).join("|");
-  return !run.recipe_changed_since && versions(run.inputs) === versions(preview.basis.inputs) && sameTotals(run.totals, preview.totals);
+  return (
+    !run.recipe_changed_since &&
+    versionsOf(run.inputs) === versionsOf(preview.basis.inputs) &&
+    run.decisions_key === preview.basis.decisions_key &&
+    sameTotals(run.totals, preview.totals)
+  );
+}
+
+function differences(run: RunDetail, preview: Preview) {
+  const reasons: string[] = [];
+  if (versionsOf(run.inputs) !== versionsOf(preview.basis.inputs)) {
+    reasons.push(`Ela usou ${run.inputs.map((input) => `${input.alias} versão ${input.version_number}`).join(" e ")}; agora a pergunta usa ${preview.basis.inputs.map((input) => `${input.alias} versão ${input.version_number}`).join(" e ")}.`);
+  }
+  if (run.recipe_deleted) reasons.push("A receita gravada com ela foi apagada.");
+  for (const change of run.decision_changes) reasons.push(change.message);
+  if (reasons.length === 0 && run.decisions_key !== preview.basis.decisions_key) reasons.push("As decisões registradas nela são diferentes das decisões atuais do Mapa.");
+  if (reasons.length === 0) reasons.push("O resultado gravado é diferente do calculado agora com as mesmas versões.");
+  return reasons;
 }
 
 function initialQuestion(catalog: Catalog, params: URLSearchParams) {
@@ -139,6 +158,7 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
   const runDetail = runQuery.data?.data ?? null;
   const results = useResults(runDetail?.status === "succeeded" ? runDetail.id : null);
   const traced = runDetail?.status === "succeeded" && results.data && preview?.computed && matches(runDetail, preview) ? runDetail : null;
+  const earlier = runDetail?.status === "succeeded" && preview && !traced ? { run: runDetail, reasons: differences(runDetail, preview) } : null;
   const tracing = runDetail && runDetail.status !== "succeeded" ? runDetail : null;
   const trace = useTraceQuestion();
   const client = useQueryClient();
@@ -170,7 +190,7 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
   const scopeText = !question.dimension
     ? "sem recorte"
     : question.dimension.value === null
-      ? `total de todos os grupos por ${dimension?.noun ?? question.dimension.column}`
+      ? `total geral · agrupado por ${dimension?.noun ?? question.dimension.column}`
       : (valueLabel ?? question.dimension.value);
   const context = [periodText, scopeText].filter(Boolean).join(" · ");
 
@@ -205,6 +225,7 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
           outcome={outcome}
           preview={preview}
           run={traced}
+          earlier={earlier}
           tracing={tracing}
           unit={unit}
           context={context}
@@ -278,8 +299,9 @@ function relatedLinks(catalog: Catalog, question: QuestionSpec, noun: string | n
   const year = period ? wholeYear(period.from, period.to) : null;
   const bounds = period ? dateBounds(base, period.kind === "date" ? { kind: "date", column: period.column } : { kind: "validity" }) : null;
   if (period && year !== null && bounds) {
-    if (year - 1 >= Number(bounds.min.slice(0, 4))) links.push({ label: `em ${year - 1}`, question: { ...question, period: { ...period, ...yearRange(year - 1) } } });
-    if (year + 1 <= Number(bounds.max.slice(0, 4))) links.push({ label: `em ${year + 1}`, question: { ...question, period: { ...period, ...yearRange(year + 1) } } });
+    const when = (target: number) => (period.kind === "date" ? `com ${period.column} em ${target}` : `${readingPhrase(period.reading)} ${target}`);
+    if (year - 1 >= Number(bounds.min.slice(0, 4))) links.push({ label: when(year - 1), question: { ...question, period: { ...period, ...yearRange(year - 1) } } });
+    if (year + 1 <= Number(bounds.max.slice(0, 4))) links.push({ label: when(year + 1), question: { ...question, period: { ...period, ...yearRange(year + 1) } } });
   }
   const neighbours = new Set<string>();
   for (const relation of catalog.relations) {

@@ -11,10 +11,12 @@ function fieldNote(table: MapTable, column: MapColumn, relations: Relationship[]
   const issue = column.issues[0];
   if (issue) return { text: issue.text, tone: issue.kind === "near" ? "pos" : issue.kind === "dup" ? "warn" : "" };
   if (column.validity) return { text: column.validity === "start" ? "início da vigência" : "fim da vigência", tone: "pos" };
-  if (column.role === "key") return { text: "chave", tone: "" };
-  const targets = relations.filter((r) => isActive(r) && r.from.dataset_key === table.key && r.from.column === column.key).map((r) => r.to.dataset_key);
-  if (targets.length > 1) return { text: `liga a ${targets.join(" ou ")}?`, tone: "pos" };
-  if (targets.length === 1) return { text: `liga a ${targets[0]}`, tone: "" };
+  if (column.role === "key") return { text: column.profile.unique ? "valores únicos" : "destino de relação", tone: "" };
+  const outgoing = relations.filter((r) => isActive(r) && r.from.dataset_key === table.key && r.from.column === column.key);
+  const decided = outgoing.filter((r) => r.status === "confirmed").map((r) => r.to.dataset_key);
+  const suggested = outgoing.filter((r) => r.status !== "confirmed").map((r) => r.to.dataset_key);
+  if (decided.length > 0) return { text: `liga a ${decided.join(" e ")}`, tone: "" };
+  if (suggested.length > 0) return { text: `liga a ${suggested.join(" ou ")}? (sugerida)`, tone: "pos" };
   return { text: TYPE_WORDS[column.type] ?? column.type, tone: "" };
 }
 

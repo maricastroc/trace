@@ -56,11 +56,11 @@ function cadastro(validity: ValidityDeclaration | null = null, extra = [] as Ret
 describe("measure options", () => {
   it("distinguishes rows from different ids when the id repeats, and names ids reached through relations", () => {
     const catalog = cadastro();
-    expect(measureOptions(catalog, catalog.byId.get("ds-beneficiarios")!).map((option) => option.label)).toEqual(["linhas", "beneficiários diferentes", "cozinhas diferentes"]);
+    expect(measureOptions(catalog, catalog.byId.get("ds-beneficiarios")!).map((option) => option.label)).toEqual(["linhas", "beneficiários diferentes", "valores diferentes de cozinha_id"]);
     expect(measureOptions(catalog, catalog.byId.get("ds-atendimentos")!).map((option) => [option.label, option.measure])).toEqual([
       ["registros", { function: "count" }],
-      ["cozinhas diferentes", { function: "count_distinct", column: "cozinha_id" }],
-      ["beneficiários diferentes", { function: "count_distinct", column: "beneficiario_id" }],
+      ["valores diferentes de cozinha_id", { function: "count_distinct", column: "cozinha_id" }],
+      ["valores diferentes de beneficiario_id", { function: "count_distinct", column: "beneficiario_id" }],
       ["soma de refeicoes", { function: "sum", column: "refeicoes" }],
     ]);
   });
@@ -112,7 +112,7 @@ describe("starter question and sentence", () => {
       period: { kind: "validity", reading: null, from: "2025-01-01", to: "2025-12-31" },
       dimension: { relationships: ["r-ben"], column: "id", label_column: "nome", value: null },
     });
-    expect(plainText(sentence(catalog, question))).toBe("Em beneficiários, quantos beneficiários diferentes por cozinha estavam vigentes em 2025?");
+    expect(plainText(sentence(catalog, question))).toBe("Em beneficiários vigentes em 2025, quantos beneficiários diferentes por cozinha?");
     const pending = sentence(catalog, question).find((part) => typeof part !== "string" && part.kind === "periodKind");
     expect(pending).toMatchObject({ pending: true });
   });
@@ -122,14 +122,14 @@ describe("starter question and sentence", () => {
     const question = starterQuestion(catalog)!;
     expect(question.base_dataset_id).toBe("ds-atendimentos");
     expect(question.period).toEqual({ kind: "date", column: "data", from: "2025-01-01", to: "2025-12-31" });
-    expect(plainText(sentence(catalog, question))).toBe("Em atendimentos, quantos registros por cozinha via atendimentos.cozinha_id com data em 2025?");
+    expect(plainText(sentence(catalog, question))).toBe("Em atendimentos com data em 2025, quantos registros por cozinha via atendimentos.cozinha_id?");
 
     const undeclared = starterQuestion(catalog, "ds-beneficiarios")!;
     expect(undeclared.period).toEqual({ kind: "date", column: "data_cadastro", from: "2025-01-01", to: "2025-12-31" });
-    expect(plainText(sentence(catalog, undeclared))).toBe("Em beneficiários, quantos beneficiários diferentes por cozinha com data_cadastro em 2025?");
+    expect(plainText(sentence(catalog, undeclared))).toBe("Em beneficiários com data_cadastro em 2025, quantos beneficiários diferentes por cozinha?");
     const people = { ...undeclared, measure: { function: "count" as const } };
     const kitchen = { ...people, dimension: { ...people.dimension!, value: "0101" }, period: { kind: "validity" as const, reading: "active_at_end" as const, from: "2025-01-01", to: "2025-12-31" } };
-    expect(plainText(sentence(catalog, kitchen, "Cozinha Esperança"))).toBe("Em beneficiários, quantas linhas de Cozinha Esperança estavam ativas no último dia de 2025?");
+    expect(plainText(sentence(catalog, kitchen, "Cozinha Esperança"))).toBe("Em beneficiários que estavam vigentes no último dia de 2025, quantas linhas de Cozinha Esperança?");
     expect(currentDimension(catalog, catalog.byId.get("ds-beneficiarios")!, kitchen.dimension)?.noun).toBe("cozinha");
   });
 
@@ -185,10 +185,18 @@ describe("answer notes", () => {
   it("explains repeated ids, copies from a join, the calculated total and the group without a match", () => {
     expect(answerNotes(question, grouped, "cozinha").map((note) => [note.kind, note.text])).toEqual([
       ["rep", "121 linhas: 4 repetem um id já contado e contam uma vez."],
-      ["warn", "A ligação criou 2 linhas a mais porque o destino tem ids repetidos. A contagem de diferentes não muda com as cópias."],
+      ["warn", "A ligação criou 2 linhas a mais porque o destino tem ids repetidos. Cada id conta uma vez por grupo, mas as cópias podem levar a mesma linha a mais de um grupo. No total, ela conta uma vez."],
       ["gran", "Somando os grupos dá 119; o total é 117. Quem aparece em mais de um grupo conta uma vez no total. O total é calculado, não somado."],
-      ["lim", "2 ficam sem cozinha e aparecem como um grupo próprio."],
+      ["lim", "O grupo sem valor de cozinha dá 2 e aparece separado."],
     ]);
+  });
+
+  it("does not promise that copies leave a distinct count unchanged when a cut follows the join", () => {
+    const cut = { ...question, dimension: { ...question.dimension, value: "0101" } };
+    const copies = answerNotes(cut, grouped, "cozinha").find((note) => note.kind === "warn")?.text;
+    expect(copies).toBe(
+      "A ligação criou 2 linhas a mais porque o destino tem ids repetidos. Cada id conta uma vez, mas entra no recorte se qualquer cópia tiver o valor escolhido: a mesma linha pode entrar no recorte de mais de um valor.",
+    );
   });
 
   it("reads groups with their labels and keeps the empty key apart", () => {

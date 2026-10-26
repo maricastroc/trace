@@ -141,14 +141,14 @@ describe("choosing the sets", () => {
     const spec = toSpec({ ...reference.draft, b: { ...reference.draft.b, label: "Atendidos em 2025" } }, { catalog })!;
     expect([spec.a.label, spec.b.label]).toEqual(["Beneficiários", "Atendidos em 2025"]);
     const validity = { ...reference.draft.a, period: { kind: "validity" as const, reading: "active_any" as const, from: "2025-01-01", to: "2025-12-31" } };
-    expect(defaultLabel(validity, { catalog })).toBe("Beneficiários que estiveram ativos em algum momento de 2025");
+    expect(defaultLabel(validity, { catalog })).toBe("Beneficiários que estiveram vigentes em algum momento de 2025");
     const versioned = { ...reference.draft.a, versionId: "v1" };
     expect(defaultLabel(versioned, { catalog, versions: { "ds-beneficiarios": [{ id: "v1", number: 1 }] } })).toBe("Beneficiários (versão 1)");
     const imported = buildCatalog([dataset("beneficiaries_25_10_2026", 463)], { "v-beneficiaries_25_10_2026": version("beneficiaries_25_10_2026", [{ key: "beneficiario" }]) }, []);
     expect(defaultLabel({ ...emptyDraft().a, datasetId: "ds-beneficiaries_25_10_2026", key: "beneficiario" }, { catalog: imported })).toBe("Beneficiaries 25 10 2026");
   });
 
-  it("asks for an explicit declaration unless the same column or a confirmed relation links the fields", () => {
+  it("asks for an explicit declaration unless the same column or an identity declared in the Mapa links the fields", () => {
     const catalog = cadastro();
     const draft = suggestions(catalog)[0].draft;
     const pair = pairOf(draft)!;
@@ -186,8 +186,14 @@ describe("choosing the sets", () => {
       ],
     );
     const kitchens = { a: { table: "ds-cozinhas", key: "id" }, b: { table: "ds-atendimentos", key: "cozinha_id" } };
-    expect(equivalenceOf(confirmed, kitchens, null)).toMatchObject({ status: "relation", gap: null });
-    expect(equivalenceOf(confirmed, { ...kitchens, b: { table: "ds-atendimentos", key: "id" } }, null)).toMatchObject({ status: "unconfirmed", gap: "one_to_one" });
+    expect(equivalenceOf(confirmed, kitchens, null)).toMatchObject({ status: "unconfirmed", gap: "join_only" });
+    expect(equivalenceOf(confirmed, { ...kitchens, b: { table: "ds-atendimentos", key: "id" } }, null)).toMatchObject({ status: "unconfirmed", gap: "join_only" });
+    const declaredInMap = buildCatalog(
+      [named("cozinhas", "Cozinhas", 12), named("atendimentos", "Atendimentos", 9756)],
+      { "v-cozinhas": version("cozinhas", [{ key: "id" }]), "v-atendimentos": version("atendimentos", [{ key: "cozinha_id", profile: { unique: false } }]) },
+      [relation("r-att", ["atendimentos", "cozinha_id"], ["cozinhas", "id"], "suggested", { identity: true })],
+    );
+    expect(equivalenceOf(declaredInMap, kitchens, null)).toMatchObject({ status: "map_declared", gap: null });
     const many = { a: { table: "ds-atendimentos", key: "beneficiario_id" }, b: { table: "ds-cozinhas", key: "municipio" } };
     expect(equivalenceOf(confirmed, many, null)).toMatchObject({ status: "unconfirmed", gap: "multiplicity" });
     expect(equivalenceOf(confirmed, many, declarationFor(many)).status).toBe("declared");
@@ -233,7 +239,7 @@ describe("choosing the sets", () => {
         dimension: { relationships: [], column: "cozinha_id", label_column: null, value: "0105" },
         steps: [],
       }),
-    ).toBe("estiveram ativos em algum momento de 2025 · cozinha_id = 0105");
+    ).toBe("estiveram vigentes em algum momento de 2025 · cozinha_id = 0105");
   });
 });
 
@@ -285,7 +291,7 @@ describe("reconciliation view", () => {
     expect(answerSentence(equal, labels)).toContain("Os totais são iguais, mas não são as mesmas identidades");
     expect(titleOf(equal, labels)).toBe("Por que cadastro e atendimentos têm 15 identidades cada, mas não as mesmas?");
     expect(unitSentence(equal, labels)).toBe(
-      "Contado em identidades distintas. cadastro tem 15 linhas = 15 identidades; atendimentos tem 118 linhas = 15 identidades (102 linhas repetidas; 1 sem identificador).",
+      "Contado em identidades distintas. cadastro tem 15 linhas e 15 identidades distintas; atendimentos tem 118 linhas e 15 identidades distintas (102 linhas repetem uma identidade já contada; 1 sem identificador).",
     );
   });
 
@@ -349,7 +355,7 @@ describe("what each side represents", () => {
     const text = answerSentence(uneven, { a: "Pessoas", b: "Cozinhas" }, unknown);
     expect(text).toBe("Nenhuma identidade aparece nos dois lados: por estas colunas, os conjuntos não têm nada em comum.");
     expect(text).not.toMatch(/cadastr|referenc|\bentidade/);
-    expect(unitSentence(uneven, { a: "Pessoas", b: "Cozinhas" })).toContain("Pessoas tem 464 linhas = 463 identidades (1 linha repetida)");
+    expect(unitSentence(uneven, { a: "Pessoas", b: "Cozinhas" })).toContain("Pessoas tem 464 linhas e 463 identidades distintas (1 linha repete uma identidade já contada)");
   });
 
   it("takes the reading from what the comparison stored, not from the current Mapa", () => {

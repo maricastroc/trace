@@ -76,6 +76,15 @@ function aggregateStep(outcome: Outcome) {
   return outcome.steps.find((step) => step.type === "aggregate") ?? null;
 }
 
+function distinctWithCopies(question: QuestionSpec) {
+  const column = question.measure.column;
+  if (!question.dimension) return `As cópias repetem o mesmo ${column}, que conta uma vez.`;
+  if (question.dimension.value === null) {
+    return `Cada ${column} conta uma vez por grupo, mas as cópias podem levar a mesma linha a mais de um grupo. No total, ela conta uma vez.`;
+  }
+  return `Cada ${column} conta uma vez, mas entra no recorte se qualquer cópia tiver o valor escolhido: a mesma linha pode entrar no recorte de mais de um valor.`;
+}
+
 export function answerNotes(question: QuestionSpec, outcome: Outcome, noun: string | null): Note[] {
   const notes: Note[] = [];
   const totals = outcome.totals;
@@ -109,7 +118,7 @@ export function answerNotes(question: QuestionSpec, outcome: Outcome, noun: stri
         text:
           question.measure.function === "count"
             ? `A ligação criou ${formatCount(extra)} linhas a mais porque o destino tem ids repetidos. Contando linhas, essas cópias entram no número.`
-            : `A ligação criou ${formatCount(extra)} linhas a mais porque o destino tem ids repetidos. ${question.measure.function === "count_distinct" ? "A contagem de diferentes não muda com as cópias." : "A soma inclui essas cópias."}`,
+            : `A ligação criou ${formatCount(extra)} linhas a mais porque o destino tem ids repetidos. ${question.measure.function === "count_distinct" ? distinctWithCopies(question) : "A soma inclui essas cópias."}`,
       });
     }
   }
@@ -124,7 +133,7 @@ export function answerNotes(question: QuestionSpec, outcome: Outcome, noun: stri
     }
     const empty = groups(outcome).find((group) => group.key === null);
     if (empty && noun) {
-      notes.push({ kind: "lim", text: `${formatAnswer(empty.value)} ${empty.value === 1 ? "fica" : "ficam"} sem ${noun} e ${empty.value === 1 ? "aparece" : "aparecem"} como um grupo próprio.` });
+      notes.push({ kind: "lim", text: `O grupo sem valor de ${noun} dá ${formatAnswer(empty.value)} e aparece separado.` });
     }
   }
   return notes;

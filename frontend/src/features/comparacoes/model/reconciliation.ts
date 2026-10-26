@@ -24,6 +24,12 @@ export function proofOf(explanation: ComparisonExplanation): Proof {
   return POSSIBLE.has(explanation) ? "possible" : "proven";
 }
 
+export function proofLabel(explanation: ComparisonExplanation, short = false) {
+  if (proofOf(explanation) === "possible") return short ? "possível" : "possível · hipótese";
+  if (explanation === "outside_other_period") return short ? "comprovado com a vigência declarada" : "comprovado pelos dados e pela vigência declarada";
+  return short ? "comprovado" : "comprovado pelos dados";
+}
+
 export function explanationText(explanation: ComparisonExplanation, side: Side, labels: Labels) {
   const other = side === "a" ? labels.b : labels.a;
   if (explanation === "absent" && labels.roles?.registry === side) {
@@ -55,21 +61,21 @@ export function explanationText(explanation: ComparisonExplanation, side: Side, 
       };
     case "possible_match":
       return {
-        title: "possível: a mesma identidade escrita de outro jeito",
-        sub: `existe em ${other} sem zeros à esquerda ou com outra caixa e espaços`,
+        title: "pode ser a mesma identidade escrita de outro jeito",
+        sub: `há em ${other} um valor que fica igual ao ignorar zeros à esquerda, maiúsculas ou espaços`,
         rule: "Não há texto igual do outro lado, mas há um único candidato quando se ignoram zeros à esquerda ou maiúsculas e espaços. É hipótese: não conta como par.",
       };
     case "ambiguous_match":
       return {
         title: "ambíguas: mais de um candidato",
-        sub: `escrita de outro jeito, aparece mais de uma vez em ${other}`,
+        sub: `ao ignorar zeros à esquerda, maiúsculas ou espaços, há mais de um valor igual em ${other}`,
         rule: "Ignorando zeros à esquerda ou maiúsculas e espaços, há mais de um candidato do outro lado. Nenhum par é feito.",
       };
     case "variant_of_matched":
       return {
         title: "parecidas com uma identidade já pareada",
-        sub: `em ${other}, a outra grafia já tem par exato`,
-        rule: "Escrita de outro jeito, equivale a uma identidade que já tem par exato. Não vira um segundo par: seriam duas identidades para uma só.",
+        sub: `fica igual a um identificador que já tem par exato em ${other}`,
+        rule: "Ao ignorar zeros à esquerda, maiúsculas ou espaços, fica igual a um identificador que já tem par exato. Não vira um segundo par: seria contar duas vezes o que pode ser uma só identidade.",
       };
     default:
       return {
@@ -177,10 +183,12 @@ export function answerSentence(summary: ComparisonSummary, labels: Labels, readi
 export function unitSentence(summary: ComparisonSummary, labels: Labels) {
   const side = (label: string, counts: ComparisonSummary["a"]) => {
     const notes = [
-      counts.repeated_rows > 0 ? `${formatCount(counts.repeated_rows)} ${counts.repeated_rows === 1 ? "linha repetida" : "linhas repetidas"}` : null,
+      counts.repeated_rows > 0
+        ? `${formatCount(counts.repeated_rows)} ${counts.repeated_rows === 1 ? "linha repete uma identidade já contada" : "linhas repetem uma identidade já contada"}`
+        : null,
       counts.empty_rows > 0 ? `${formatCount(counts.empty_rows)} sem identificador` : null,
     ].filter(Boolean);
-    return `${label} tem ${formatCount(counts.rows)} ${counts.rows === 1 ? "linha" : "linhas"} = ${formatCount(counts.distinct)} identidades${notes.length ? ` (${notes.join("; ")})` : ""}`;
+    return `${label} tem ${formatCount(counts.rows)} ${counts.rows === 1 ? "linha" : "linhas"} e ${formatCount(counts.distinct)} ${counts.distinct === 1 ? "identidade distinta" : "identidades distintas"}${notes.length ? ` (${notes.join("; ")})` : ""}`;
   };
   return `Contado em identidades distintas. ${side(labels.a, summary.a)}; ${side(labels.b, summary.b)}.`;
 }

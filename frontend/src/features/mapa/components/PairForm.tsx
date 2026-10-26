@@ -70,7 +70,11 @@ export function PairForm({ model, fromTable, fromColumn, initialTo, correcting, 
         { id: correcting.id, from_column: from, to_dataset_id: target.table.id, to_column: target.column },
         {
           onSuccess: (response) => {
-            toast(`Colunas corrigidas: ${fromTable.key}.${from} → ${target.table.key}.${target.column}. A anterior foi rejeitada; a nova continua sugerida até você decidir.`);
+            toast(
+              response.data.status === "confirmed"
+                ? `Colunas corrigidas: ${fromTable.key}.${from} → ${target.table.key}.${target.column}. A anterior foi rejeitada; a nova já estava confirmada e mantém a decisão que você tomou antes.`
+                : `Colunas corrigidas: ${fromTable.key}.${from} → ${target.table.key}.${target.column}. A anterior foi rejeitada; a nova continua sugerida até você decidir.`,
+            );
             onDone(response.data.id);
           },
         },
@@ -123,7 +127,12 @@ export function PairForm({ model, fromTable, fromColumn, initialTo, correcting, 
             <Line state={evidence.to.unique ? "ok" : "fail"}>{evidence.to.unique ? "destino único" : `${formatCount(evidence.to.duplicate_values)} ids repetidos no destino`}</Line>
             <Line state={evidence.to.unique ? "ok" : "warn"}>cardinalidade observada {CARDINALITY_SHORT[evidence.cardinality]}</Line>
             <Line state={evidence.name.matched ? "ok" : "warn"}>{evidence.name.matched ? "nome compatível" : `o nome ${from} não sugere ${target?.table.key}`}</Line>
-            {existing && <p className="small-note">Esta relação já existe e está {STATE_WORDS[existing.status]}.</p>}
+            {existing && (
+              <p className="small-note">
+                Esta relação já existe e está {STATE_WORDS[existing.status]}.
+                {correcting && existing.status === "confirmed" && " Usar estas colunas rejeita a atual e mantém a decisão já tomada para a existente, sem refazer a evidência."}
+              </p>
+            )}
           </>
         )}
       </div>

@@ -42,6 +42,7 @@ export type ColumnProfile = {
   leading_zero_values: number;
   fixed_length: number | null;
   type_reason: string;
+  decimal_ambiguous?: boolean;
   min?: string;
   max?: string;
 };
@@ -171,6 +172,8 @@ export type Relationship = {
   evaluated_versions?: { from: string; to: string };
   confirmed_at: string | null;
   rejected_at: string | null;
+  identity_declared_at: string | null;
+  decided_versions: { from: number | null; to: number | null } | null;
   created_at: string;
 };
 
@@ -325,9 +328,23 @@ export type RunStep = {
   excluded_count: number | null;
   duration_ms: number | null;
   stats: StepStats | null;
-  join: { relationship_id: string; join_type: "inner" | "left"; probe: JoinSide; lookup: JoinSide } | null;
+  join: {
+    relationship_id: string;
+    relationship_status: RelationshipStatus | null;
+    relationship_policy: RelationshipPolicy | null;
+    direction: "forward" | "reverse" | null;
+    join_type: "inner" | "left";
+    probe: JoinSide;
+    lookup: JoinSide;
+  } | null;
   plain: StepPlain;
 };
+
+export type Decision =
+  | { kind: "relation"; position: number; relationship_id: string; route: string; status: RelationshipStatus | null; policy: RelationshipPolicy | null; direction: "forward" | "reverse" | null }
+  | { kind: "validity"; position: number | null; alias: string; dataset_id: string | null; start_column: string | null; end_column: string | null; end_inclusive: boolean | null };
+
+export type DecisionChange = { kind: Decision["kind"]; position: number | null; message: string };
 
 export type RunInput = RecipeInput & {
   row_count: number;
@@ -355,7 +372,11 @@ export type RunDetail = RunSummary & {
   totals?: RunTotals | null;
   recipe: { id: string; name: string; revision: number };
   current_recipe_revision: number | null;
+  recipe_deleted: boolean;
   recipe_changed_since: boolean;
+  decisions: Decision[];
+  decisions_key: string;
+  decision_changes: DecisionChange[];
   inputs: RunInput[];
   steps: RunStep[];
   output_columns: OutputColumn[] | null;
@@ -558,6 +579,8 @@ export type Preview = {
   basis: {
     recipe: { id: string; revision: number } | null;
     inputs: { position: number; alias: string; dataset_id: string; dataset_name: string; version_id: string; version_number: number }[];
+    decisions: Decision[];
+    decisions_key: string;
   };
   issues: Issue[];
   recipe_steps: CompiledStep[];
@@ -647,7 +670,7 @@ export type ComparisonSpec = {
   equivalence?: EquivalenceDeclaration;
 };
 
-export type EquivalenceStatus = "same_field" | "relation" | "declared" | "unconfirmed";
+export type EquivalenceStatus = "same_field" | "map_declared" | "relation" | "declared" | "unconfirmed";
 
 export type EquivalenceField = { dataset_id: string; dataset: string; key: string; name: string };
 
@@ -679,6 +702,8 @@ export type ComparisonSideBasis = {
   period: QuestionPeriod | null;
   dimension: QuestionDimension | null;
   steps: { position: number; type: CompiledStep["type"]; summary: string }[];
+  decisions?: Decision[];
+  decisions_key?: string;
 };
 
 export type ComparisonExplanation = "excluded_in_other" | "outside_other_period" | "possible_match" | "ambiguous_match" | "variant_of_matched" | "absent";
@@ -753,6 +778,7 @@ export type ComparisonRunDetail = {
   attribution: ComparisonAttribution;
   equivalence: ComparisonEquivalence | null;
   issues: ComparisonIssue[];
+  changes: { a: DecisionChange[]; b: DecisionChange[]; equivalence: string | null; recorded: boolean } | null;
   summary: ComparisonSummary | null;
   error: { code: string; message: string } | null;
   duration_ms: number | null;
@@ -765,8 +791,11 @@ export type ComparisonRunBrief = {
   id: string;
   status: ComparisonRunStatus;
   rules: ComparisonRule[];
-  equivalence: Pick<ComparisonEquivalence, "status" | "statement"> | null;
-  sides: Record<"a" | "b", { label: string; kind: "population" | "run"; dataset: { id: string; key: string; name: string }; version: { id: string; number: number; rows: number }; key: string }>;
+  equivalence: (Pick<ComparisonEquivalence, "status" | "statement"> & { reading: ComparisonReading["kind"] | null }) | null;
+  sides: Record<
+    "a" | "b",
+    { label: string; kind: "population" | "run"; dataset: { id: string; key: string; name: string }; version: { id: string; number: number; rows: number }; key: string; decisions_key: string | null }
+  >;
   summary: Pick<ComparisonSummary, "a" | "b" | "shared" | "shared_by_rule" | "only_a" | "only_b" | "net_difference" | "unmatched"> | null;
   queued_at: string | null;
   finished_at: string | null;

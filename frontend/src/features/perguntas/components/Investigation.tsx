@@ -11,7 +11,7 @@ import { stepViews } from "../model/steps";
 import { Ladder, Records, type RecordFilter, type SelectedRow } from "./Steps";
 
 const TABS = [
-  ["steps", "Passos e registros"],
+  ["steps", "Passos e linhas"],
   ["criteria", "Critérios e relações"],
   ["spec", "Pergunta estruturada"],
 ] as const;
@@ -95,7 +95,7 @@ function StepsTab({ base, question, preview, outcome, groups, run, tracing, trac
           <div className="gate">
             <p className="gate-t">Este número ainda é uma prévia.</p>
             <p>
-              Passos e registros aparecem depois de {pending.length === 1 ? "resolver 1 decisão" : `resolver ${pending.length} decisões`}, para o rastreio não se apoiar
+              Passos e linhas aparecem depois de {pending.length === 1 ? "resolver 1 decisão" : `resolver ${pending.length} decisões`}, para o rastreio não se apoiar
               em suposições.
             </p>
           </div>
@@ -103,12 +103,12 @@ function StepsTab({ base, question, preview, outcome, groups, run, tracing, trac
         </>
       );
     }
-    if (tracing && tracing.status !== "failed") return <LoadingBlock label="Rastreando: o motor está gravando cada passo e cada registro" />;
+    if (tracing && tracing.status !== "failed") return <LoadingBlock label="Rastreando: o motor está gravando cada passo e cada linha" />;
     return (
       <div className="gate">
         <p className="gate-t">Pronto para rastrear.</p>
         <p>
-          Rastrear executa a mesma pergunta pelo motor e grava as versões dos dados, as regras, o resultado e cada registro que entrou ou saiu. A prévia não grava nada.
+          Rastrear executa a mesma pergunta pelo motor e grava as versões dos dados, as regras, o resultado e cada linha que entrou ou saiu. A prévia não grava nada.
         </p>
         {tracing?.status === "failed" && (
           <p role="alert" className="text-b-deep">
@@ -138,14 +138,14 @@ function StepsTab({ base, question, preview, outcome, groups, run, tracing, trac
   return (
     <div className="inv-grid">
       <div className="inv-col">
-        <h3>Percurso dos registros</h3>
-        <p className="small-note">Escolha um passo ou um motivo de saída para ver aqueles registros à direita.</p>
+        <h3>Percurso das linhas</h3>
+        <p className="small-note">Escolha um passo ou um motivo de saída para ver aquelas linhas à direita.</p>
         <Ladder views={views} filter={filter} onFilter={choose} />
       </div>
       <div className="inv-col">
-        <h3>Registros</h3>
+        <h3>Linhas</h3>
         {run.result_count === 0 ? (
-          <p className="small-note">Nenhum registro chegou ao fim. Veja quem ficou de fora em cada passo.</p>
+          <p className="small-note">Nenhuma linha chegou ao fim. Veja quais ficaram de fora em cada passo.</p>
         ) : null}
         <Records
           run={run}

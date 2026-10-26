@@ -18,7 +18,7 @@ export type OpenRecord = (table: string, rowId: number, values: Record<string, s
 function columnNote(column: MapColumn) {
   if (column.issues.length) return { text: column.issues.map((i) => i.text).join(" · "), warn: column.issues.some((i) => i.kind === "dup") };
   const p = column.profile;
-  if (column.role === "key") return { text: `chave · ${plural(p.distinct, "valor único", "valores únicos")}`, warn: false };
+  if (column.role === "key") return { text: p.unique ? `${plural(p.distinct, "valor", "valores")}, nenhum repetido` : plural(p.distinct, "valor", "valores"), warn: false };
   if ((column.type === "date" || column.type === "number") && p.min && p.max) return { text: `de ${p.min} a ${p.max}${p.nulls ? ` · ${plural(p.nulls, "vazio", "vazios")}` : ""}`, warn: false };
   return { text: `${TYPE_WORDS[column.type] ?? column.type} · ${plural(p.distinct, "valor", "valores")}`, warn: false };
 }
@@ -299,7 +299,7 @@ function OutgoingLink({ relation, value, model, onOpenRecord }: { relation: Rela
     return (
       <button type="button" className="link-card" onClick={() => onOpenRecord(relation.to.dataset_key, first.id, first.values, first.line_number)}>
         <span className="lt">{head}</span>
-        {total > 1 ? <span className="tagx rep">{total} cópias</span> : <span aria-hidden>→</span>}
+        {total > 1 ? <span className="tagx rep">{total} linhas com este valor</span> : <span aria-hidden>→</span>}
         <span className="ld">
           {first.values.nome ?? `linha ${first.line_number}`}
           {pending}

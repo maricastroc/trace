@@ -28,7 +28,7 @@ import { History } from "./components/History";
 import { Result } from "./components/Result";
 import type { TraceControl } from "./components/Investigate";
 import { Setup } from "./components/Setup";
-import { fromPreview, fromRun, labelsOf, sameNumbers, versionsOf, type ResultModel } from "./model/result";
+import { fromPreview, fromRun, labelsOf, traceDifferences, type ResultModel } from "./model/result";
 import { decodeSpec, emptyDraft, encodeSpec, fromSpec, RULE_TEXT, suggestions, toSpec, type Draft, type Naming } from "./model/spec";
 
 export function ComparacoesScreen() {
@@ -61,7 +61,7 @@ export function ComparacoesScreen() {
     return (
       <Shell>
         <EmptyBlock title="Nenhuma tabela neste cenário ainda.">
-          Importe um CSV no Mapa para comparar conjuntos de registros.{" "}
+          Importe um CSV no Mapa para comparar conjuntos de linhas.{" "}
           <Link className="btn-link" href="/mapa?importar=nova">
             Importar CSV
           </Link>
@@ -278,22 +278,39 @@ function PreviewState({ preview, data, onEdit }: { preview: ReturnType<typeof us
 function PreviewStatus({ preview, comparisons, trace }: { preview: ComparisonPreview; comparisons: ComparisonListItem[]; trace: TraceControl }) {
   const last = comparisons.find((item) => item.spec_key === preview.spec_key)?.last_run ?? null;
   const done = last?.status === "succeeded" ? last : null;
-  const matches = done !== null && versionsOf(done.sides) === versionsOf(preview.sides) && sameNumbers(done.summary, preview.summary);
+  const reasons = done ? traceDifferences(done, preview) : [];
+  const matches = done !== null && reasons.length === 0;
+  const pending = preview.pending;
   return (
-    <div className={`trace-bar ${done && !matches ? "warn" : ""}`} role="status">
+    <div className={`trace-bar ${(done && !matches) || pending.length > 0 ? "warn" : ""}`} role="status">
+      {pending.length > 0 && (
+        <div className="trace-why">
+          <p>
+            <b>Prévia provisória.</b> Ela usa {pending.length === 1 ? "uma relação que ainda não foi decidida" : `${pending.length} relações que ainda não foram decididas`} no
+            Mapa. O número mostra o efeito, mas não pode ser rastreado enquanto a decisão estiver pendente.
+          </p>
+          <Needs issues={pending} />
+        </div>
+      )}
       {done && matches ? (
         <p>
-          <b>Prévia calculada agora.</b> Confere com a execução rastreada de {formatWhen(done.finished_at)}: mesmas versões e mesmos números.
+          <b>Prévia calculada agora.</b> Confere com a execução rastreada de {formatWhen(done.finished_at)}: mesmas versões, mesmas decisões e mesmos números.
         </p>
       ) : done ? (
-        <p>
-          <b>Esta prévia não confere com a execução rastreada de {formatWhen(done.finished_at)}.</b> A execução usou {done.sides.a.dataset.key} versão {done.sides.a.version.number}{" "}
-          e {done.sides.b.dataset.key} versão {done.sides.b.version.number}
-          {done.summary
-            ? ` e deu ${formatCount(done.summary.a.distinct)} − ${formatCount(done.summary.only_a)} + ${formatCount(done.summary.only_b)} = ${formatCount(done.summary.b.distinct)}`
-            : ""}
-          . Ela continua gravada como estava; esta prévia não a substitui.
-        </p>
+        <div className="trace-why">
+          <p>
+            <b>Esta prévia não confere com a execução rastreada de {formatWhen(done.finished_at)}.</b>
+            {done.summary
+              ? ` A execução deu ${formatCount(done.summary.a.distinct)} − ${formatCount(done.summary.only_a)} + ${formatCount(done.summary.only_b)} = ${formatCount(done.summary.b.distinct)}.`
+              : ""}
+          </p>
+          <ul>
+            {reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <p>Ela continua gravada como estava; esta prévia não a substitui.</p>
+        </div>
       ) : (
         <p>
           <b>Prévia calculada agora, sem gravar nada.</b> Rastrear grava a comparação, fixa as versões e permite abrir cada identidade e as linhas de origem.
@@ -306,7 +323,7 @@ function PreviewStatus({ preview, comparisons, trace }: { preview: ComparisonPre
           </Link>
         )}
         {!matches && (
-          <button type="button" className="btn btn-ab" disabled={trace.pending} onClick={trace.onTrace}>
+          <button type="button" className="btn btn-ab" disabled={trace.pending || pending.length > 0} onClick={trace.onTrace}>
             {trace.pending ? "Rastreando…" : done ? "Rastrear de novo" : "Rastrear a comparação"}
           </button>
         )}
@@ -325,13 +342,31 @@ function TracedStatus({ catalog, run, onCurrent }: { catalog: Catalog; run: Comp
       ? [`${basis.dataset.key} tem a versão ${table.versionNumber}`]
       : [];
   });
+  const changes = run.changes
+    ? [
+        ...run.changes.a.map((change) => `${run.sides.a.label}: ${change.message}`),
+        ...run.changes.b.map((change) => `${run.sides.b.label}: ${change.message}`),
+        ...(run.changes.equivalence ? [run.changes.equivalence] : []),
+      ]
+    : [];
   return (
-    <div className={`trace-bar traced ${newer.length ? "warn" : ""}`} role="status">
+    <div className={`trace-bar traced ${newer.length || changes.length ? "warn" : ""}`} role="status">
       <p>
         <b>Execução rastreada em {formatWhen(run.finished_at)}.</b> Versões fixadas: {run.sides.a.dataset.key} versão {run.sides.a.version.number} e {run.sides.b.dataset.key}{" "}
         versão {run.sides.b.version.number}. Cada identidade está gravada{run.duration_ms !== null ? ` · ${formatDuration(run.duration_ms)}` : ""}.
         {newer.length > 0 && ` Desde então, ${newer.join(" e ")}; esta execução continua apontando para as versões que usou.`}
       </p>
+      {changes.length > 0 && (
+        <div className="trace-why">
+          <p>Decisões que mudaram depois desta execução (ela continua com as que usou):</p>
+          <ul>
+            {changes.map((change) => (
+              <li key={change}>{change}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {run.changes && !run.changes.recorded && <p className="small-note">Esta execução foi gravada antes de o Trace registrar as relações e vigências usadas em cada lado.</p>}
       <div className="q-actions">
         <button type="button" className="btn btn-quiet" onClick={onCurrent}>
           Comparar com os dados atuais

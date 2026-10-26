@@ -37,7 +37,11 @@ function run(steps: RunStep[], totals: RunDetail["totals"], groupKeys: { alias: 
     totals,
     recipe: { id: "q1", name: "Pergunta", revision: 1 },
     current_recipe_revision: 1,
+    recipe_deleted: false,
     recipe_changed_since: false,
+    decisions: [],
+    decisions_key: "",
+    decision_changes: [],
     inputs: [
       {
         position: 0,
@@ -71,7 +75,7 @@ describe("step views", () => {
       null_key_tuples: 0,
       created_tuples: 6,
       excluded_by_reason: { no_match: 0, null_key: 0 },
-    }, { join: { relationship_id: "rel", join_type: "left", probe: { alias: "beneficiaries", column: "cozinha", input: 0 }, lookup: { alias: "kitchens", column: "cozinha", input: 1 } } });
+    }, { join: { relationship_id: "rel", relationship_status: "confirmed", relationship_policy: null, direction: "forward", join_type: "left", probe: { alias: "beneficiaries", column: "cozinha", input: 0 }, lookup: { alias: "kitchens", column: "cozinha", input: 1 } } });
     const aggregate = step(3, "aggregate", "Conta os registros por cozinha e endereco", [6, 1, 0], { groups: 1, aggregated_tuples: 6 });
     const views = stepViews(run([filter, join, aggregate], { values: { resposta: 6 }, sum_of_groups: { resposta: 6 }, groups: 1 }, [
       { alias: "kitchens", column: "cozinha" },
@@ -92,7 +96,7 @@ describe("step views", () => {
     expect(views[3]).toMatchObject({
       results: 1,
       grouped: true,
-      facts: ["6 registros organizados em 1 grupo por kitchens.cozinha e kitchens.endereco", "Total contado: 6 registros"],
+      facts: ["6 linhas organizadas em 1 grupo por kitchens.cozinha e kitchens.endereco", "Total contado: 6 linhas"],
     });
     expect(lossesBefore(views, 2)).toBe(458);
   });
@@ -115,11 +119,11 @@ describe("step views", () => {
 
     expect(views[1]).toMatchObject({ left: false, matched: 95, copies: 2, losses: [{ code: "join.no_match", text: "sem par em beneficiarios", count: 5 }] });
     const counted = stepViews(run([join, aggregate], { values: { resposta: 97 }, sum_of_groups: { resposta: 97 }, groups: 1 }), count);
-    expect(counted[2]).toMatchObject({ facts: ["97 registros entram no cálculo, sem agrupar: 1 resultado", "Total contado: 97 registros", "Contando linhas, as cópias criadas pela ligação também entram no total"] });
+    expect(counted[2]).toMatchObject({ facts: ["97 linhas entram no cálculo, sem agrupar: 1 resultado", "Total contado: 97 linhas", "Contando linhas, as cópias criadas pela ligação também entram no total"] });
     expect(views[2]).toMatchObject({
       grouped: false,
       facts: [
-        "97 registros entram no cálculo, sem agrupar: 1 resultado",
+        "97 linhas entram no cálculo, sem agrupar: 1 resultado",
         "Total contado: 80 valores diferentes de beneficiario_id em 95 linhas preenchidas",
         "15 linhas repetem um beneficiario_id já contado e não somam",
         "2 linhas sem beneficiario_id não entram na contagem",
@@ -136,10 +140,10 @@ describe("step views", () => {
     expect(views[1]).toMatchObject({
       results: 12,
       facts: [
-        "133 registros organizados em 12 grupos por cozinhas.id",
+        "133 linhas organizadas em 12 grupos por cozinhas.id",
         "Total contado: 117 valores diferentes de id em 133 linhas preenchidas",
         "16 linhas repetem um id já contado e não somam",
-        "Somando os grupos dá 119; o total é calculado sobre todos os registros, não somado",
+        "Somando os grupos dá 119; o total é calculado sobre todas as linhas, não somado",
       ],
     });
   });

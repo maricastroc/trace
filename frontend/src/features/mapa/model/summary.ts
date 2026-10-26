@@ -13,7 +13,7 @@ export function relationsSummary(relations: Relationship[]) {
   const attention = suggested.filter(needsAttention).length;
   const parts: string[] = [];
   const lead = (one: string, many: string, n: number, short: [string, string]) => (parts.length ? plural(n, short[0], short[1]) : plural(n, one, many));
-  if (suggested.length) parts.push(`${plural(suggested.length, "relação aguarda", "relações aguardam")} sua decisão`);
+  if (suggested.length) parts.push(`${plural(suggested.length, "sugestão de relação aguarda", "sugestões de relação aguardam")} sua decisão`);
   if (review) parts.push(lead("relação para reavaliar", "relações para reavaliar", review, ["para reavaliar", "para reavaliar"]));
   if (confirmed) parts.push(lead("relação confirmada", "relações confirmadas", confirmed, ["confirmada", "confirmadas"]));
   if (caveat) parts.push(lead("relação com ressalva", "relações com ressalva", caveat, ["com ressalva", "com ressalva"]));

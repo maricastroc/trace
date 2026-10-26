@@ -26,13 +26,14 @@ export function ValidityForm({ table, onDeclared }: { table: ValidityTable; onDe
           {v.end_column ? (
             <>
               {" "}
-              e <b className="font-mono">{v.end_column}</b> o fim; o dia do fim {v.end_inclusive ? "ainda conta" : "já não conta"} como vigente. Fim vazio significa ainda vigente.
+              e <b className="font-mono">{v.end_column}</b> o fim; o dia do fim {v.end_inclusive ? "ainda conta" : "já não conta"} como vigente. Fim vazio é tratado como vigência
+              em aberto (ainda vigente).
             </>
           ) : (
-            "; não há coluna de fim, então todo registro fica vigente a partir do início."
+            "; não há coluna de fim, então cada linha é tratada como vigente a partir do início."
           )}
         </p>
-        <p className="small-note">Perguntas por período usam esta declaração: começaram no período, ativos em algum momento ou ativos no último dia.</p>
+        <p className="small-note">Perguntas por período usam esta declaração: começaram no período, estiveram vigentes em algum momento ou estavam vigentes no último dia.</p>
         <button
           type="button"
           className="btn btn-quiet justify-self-start"

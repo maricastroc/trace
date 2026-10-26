@@ -84,7 +84,7 @@ export function ZoomControls({ label, onZoomIn, onZoomOut, onFit }: ZoomProps) {
 
 export function MapLegend() {
   return (
-    <div className="map-ov map-legend" aria-label="Legenda">
+    <div className="map-ov map-legend" role="group" aria-label="Legenda">
       <span>
         <i className="lg-dot" />
         sugerida

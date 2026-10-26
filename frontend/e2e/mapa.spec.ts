@@ -142,7 +142,7 @@ async function outsideView(page: Page, keys?: string[]) {
 test("the heading explains the screen and summarises the real relations", async ({ page, request }) => {
   await resetMeals(page, request);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Como seus dados se conectam");
-  await expect(page.locator(".map-summary")).toHaveText("1 relação aguarda sua decisão. Clique numa conexão para ver a evidência.");
+  await expect(page.locator(".map-summary")).toHaveText("1 sugestão de relação aguarda sua decisão. Clique numa conexão para ver a evidência.");
 });
 
 test("opening a field keeps its table and the neighbour visible beside the panel", async ({ page, request }) => {
@@ -260,7 +260,7 @@ test.describe("Mapa · relações com ressalva", () => {
 
     await panel.getByText("O que acontece numa junção").click();
     await panel.getByRole("table", { name: "Ids repetidos que multiplicam linhas" }).getByRole("row").nth(1).click();
-    const copies = panel.getByRole("table", { name: "Cópias em beneficiarios" });
+    const copies = panel.getByRole("table", { name: "Linhas de beneficiarios com este valor" });
     await expect(copies).toBeVisible();
     await expect.poll(() => copies.getByRole("row").count()).toBeGreaterThanOrEqual(3);
 

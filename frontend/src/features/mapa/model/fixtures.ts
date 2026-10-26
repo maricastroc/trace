@@ -66,6 +66,7 @@ type EvidenceOverrides = {
   policy?: RelationshipPolicy | null;
   standing?: RelationshipStandingKey;
   effect?: Partial<JoinEffect>;
+  identity?: boolean;
 };
 
 export function relation(id: string, from: [string, string], to: [string, string], status: RelationshipStatus = "suggested", o: EvidenceOverrides = {}): Relationship {
@@ -137,6 +138,8 @@ export function relation(id: string, from: [string, string], to: [string, string
     evidence_is_current: true,
     confirmed_at: null,
     rejected_at: null,
+    identity_declared_at: o.identity ? "2026-10-26T00:00:00+00:00" : null,
+    decided_versions: status === "suggested" ? null : { from: 1, to: 1 },
     created_at: "2026-10-24T00:00:00Z",
   };
 }

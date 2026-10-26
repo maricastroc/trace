@@ -263,6 +263,11 @@
   color: var(--ab);
 }
 
+.perguntas .clar-pending {
+  display: grid;
+  gap: 10px;
+}
+
 .perguntas .clar-sub {
   margin: 0 0 8px;
   font-size: 16px;
@@ -502,6 +507,26 @@
   color: var(--ink);
   border-left: 3px solid var(--b);
   padding-left: 12px;
+}
+
+.perguntas .ans-earlier {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  border-left: 3px solid var(--ab);
+  padding-left: 12px;
+}
+
+.perguntas .ans-earlier p,
+.perguntas .ans-earlier ul {
+  margin: 0;
+}
+
+.perguntas .ans-earlier ul {
+  padding-left: 18px;
 }
 
 .perguntas .needs {

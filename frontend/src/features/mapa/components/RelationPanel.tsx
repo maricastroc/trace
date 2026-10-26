@@ -1,8 +1,9 @@
 "use client";
 
+import { RowOpen } from "@/components/ui/RowOpen";
 import { useState, type ReactNode } from "react";
 import { formatCount, formatWhen, plural } from "@/lib/format";
-import { useDecideRelationship, useRelationship, useRowsWhere, useUnmatched, type RelationshipDecision } from "@/lib/queries";
+import { useDecideRelationship, useRelationship, useRelationshipIdentity, useRowsWhere, useUnmatched, type RelationshipDecision } from "@/lib/queries";
 import type { Relationship, RelationshipPolicy } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { StatePill } from "@/components/ui/StatePill";
@@ -15,7 +16,7 @@ import { RecordTable } from "./RecordTable";
 import type { OpenRecord } from "./TablePanels";
 
 const GLYPH: Record<Check["state"], string> = { ok: "✓", warn: "!", fail: "✕", hyp: "?", info: "·" };
-const STATE_LABEL: Record<Check["state"], string> = { ok: "ok", warn: "atenção", fail: "falha", hyp: "hipótese", info: "informação" };
+const STATE_LABEL: Record<Check["state"], string> = { ok: "a favor", warn: "atenção", fail: "contra", hyp: "hipótese", info: "informação" };
 
 function More({ title, meta, children }: { title: string; meta?: string; children: ReactNode }) {
   return (
@@ -56,7 +57,15 @@ function CheckRow({ check, pressed, onPress }: { check: Check; pressed: boolean;
   );
 }
 
-function UnmatchedRecords({ relation, side, onOpenRecord }: { relation: Relationship; side: UnmatchedSide; onOpenRecord: (table: string, rowId: number, values: Record<string, string | null>, line: number) => void }) {
+function UnmatchedRecords({
+  relation,
+  side,
+  onOpenRecord,
+}: {
+  relation: Relationship;
+  side: UnmatchedSide;
+  onOpenRecord: (table: string, rowId: number, values: Record<string, string | null>, line: number) => void;
+}) {
   const [page, setPage] = useState(1);
   const query = useUnmatched(relation.id, side, page);
   const table = side === "to" ? relation.to.dataset_key : relation.from.dataset_key;
@@ -86,10 +95,10 @@ function SampleRows({ relation, value, model, onOpenRecord }: { relation: Relati
   return (
     <div className="grid gap-3">
       <p className="small-note">
-        Cópias de {relation.to.column} = {value} em {relation.to.dataset_key}
+        Linhas de {relation.to.dataset_key} com {relation.to.column} = {value}
       </p>
       <RecordTable
-        label={`Cópias em ${relation.to.dataset_key}`}
+        label={`Linhas de ${relation.to.dataset_key} com este valor`}
         columns={target?.columns.map((c) => c.key) ?? []}
         rows={copies.data?.data}
         meta={copies.data?.meta}
@@ -154,27 +163,19 @@ function JoinEffectDetails({ relation, model, onOpenRecord }: { relation: Relati
                 <thead>
                   <tr>
                     <th scope="col">{relation.to.column}</th>
-                    <th scope="col">cópias</th>
+                    <th scope="col">linhas no destino</th>
                     <th scope="col">na origem</th>
                     <th scope="col">a mais</th>
                   </tr>
                 </thead>
                 <tbody>
                   {effect.samples.map((row) => (
-                    <tr
-                      key={row.value}
-                      className="clickable"
-                      tabIndex={0}
-                      aria-selected={sample === row.value}
-                      onClick={() => setSample(row.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSample(row.value);
-                        }
-                      }}
-                    >
-                      <td>{row.value}</td>
+                    <tr key={row.value} className="clickable" onClick={() => setSample(row.value)}>
+                      <td>
+                        <RowOpen label={`Ver as linhas com o valor ${row.value}`} pressed={sample === row.value} onOpen={() => setSample(row.value)}>
+                          {row.value}
+                        </RowOpen>
+                      </td>
                       <td>{formatCount(row.target_rows)}</td>
                       <td>{formatCount(row.source_rows)}</td>
                       <td>+{formatCount(row.extra_rows)}</td>
@@ -185,7 +186,7 @@ function JoinEffectDetails({ relation, model, onOpenRecord }: { relation: Relati
             </div>
           </div>
           <p className="small-note">
-            “Cópias” são as linhas de {relation.to.dataset_key} com o mesmo id; “na origem”, as linhas de {from} que apontam para ele.
+            “Linhas no destino” são as linhas de {relation.to.dataset_key} com o mesmo valor; “na origem”, as linhas de {from} que apontam para ele.
           </p>
           {sample && <SampleRows key={sample} relation={relation} value={sample} model={model} onOpenRecord={onOpenRecord} />}
         </>
@@ -211,7 +212,17 @@ export function RelationPanel({ id, listed, model, onSelectRelation, onFocusTabl
     if (current.isError) return <ErrorBlock error={current.error} onRetry={() => current.refetch()} />;
     return <LoadingBlock label="Carregando a relação" />;
   }
-  return <RelationBody relation={relation} stale={listed ? !listed.evidence_is_current : false} model={model} onSelectRelation={onSelectRelation} onFocusTable={onFocusTable} onOpenTable={onOpenTable} onOpenRecord={onOpenRecord} />;
+  return (
+    <RelationBody
+      relation={relation}
+      stale={listed ? !listed.evidence_is_current : false}
+      model={model}
+      onSelectRelation={onSelectRelation}
+      onFocusTable={onFocusTable}
+      onOpenTable={onOpenTable}
+      onOpenRecord={onOpenRecord}
+    />
+  );
 }
 
 type BodyProps = Omit<Props, "id" | "listed"> & { relation: Relationship; stale: boolean };
@@ -254,6 +265,8 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
   const short = CARDINALITY_SHORT[e.cardinality] ?? e.cardinality;
   const target = `${relation.to.dataset_key}.${relation.to.column}`;
   const versions = `${relation.from.dataset_key} v${e.from.version_number} e ${relation.to.dataset_key} v${e.to.version_number}`;
+  const decided = relation.decided_versions;
+  const decidedVersions = decided?.from && decided.to ? `${relation.from.dataset_key} v${decided.from} e ${relation.to.dataset_key} v${decided.to}` : versions;
 
   const acceptButton = (
     <button type="button" className="btn btn-ab" aria-expanded={accepting} onClick={() => setAccepting((v) => !v)}>
@@ -281,7 +294,7 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
       <div className="rel-top">
         <div className="statusline">
           <StatePill status={standing} />
-          <span className="font-mono text-[13.5px] text-ink-3">{relation.origin === "manual" ? "criada por você" : "encontrada pelo Trace"}</span>
+          <span className="font-mono text-[13.5px] text-ink-3">{relation.origin === "manual" ? "criada por você" : "sugerida pelo Trace"}</span>
         </div>
         <p className={`rel-summary ${summary.warn ? "warn" : ""}`}>{summary.text}</p>
         <ul className="rel-facts" aria-label="Resumo da evidência">
@@ -294,7 +307,7 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
         {sentences && <p className="rel-effect">{sentences.inner}</p>}
         {competitors.length > 0 && relation.status === "suggested" && (
           <p className="rel-comp">
-            Esta coluna também se liga a {competitors.map((c) => `${c.to.dataset_key}.${c.to.column}`).join(", ")}. Só uma deve valer.
+            Os valores desta coluna também têm correspondência em {competitors.map((c) => `${c.to.dataset_key}.${c.to.column}`).join(", ")} (outra sugestão). Compare a evidência antes de decidir.
             {competitors.map((c) => (
               <button key={c.id} type="button" className="btn-link" onClick={() => onSelectRelation(c.id)}>
                 Ver {c.to.dataset_key}
@@ -311,7 +324,8 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
             {!e.to.unique && (
               <p className="dec-block">
                 <b>N:1 não comprovada. </b>
-                {target} tem {plural(e.to.duplicate_values, "id repetido", "ids repetidos")}. Para usar esta relação, aceite a multiplicidade explicitamente, corrija as colunas ou rejeite.
+                {target} tem {plural(e.to.duplicate_values, "id repetido", "ids repetidos")}. Para usar esta relação, aceite a multiplicidade explicitamente, corrija as colunas ou
+                rejeite.
               </p>
             )}
             <div className="panel-actions">
@@ -350,13 +364,13 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
         {(standing === "confirmed" || standing === "caveat" || standing === "rejected") && (
           <div className="dec-record">
             <p className="eyebrow">
-              sua decisão · {formatWhen(decidedAt)} · {relation.from.dataset_key} v{e.from.version_number}, {relation.to.dataset_key} v{e.to.version_number}
+              sua decisão · {formatWhen(decidedAt)} · sobre {decidedVersions}
             </p>
             <p>
               {standing === "rejected"
                 ? "Rejeitada. Não será usada em perguntas nem comparações."
                 : standing === "caveat"
-                  ? `Confirmada com ressalva: a multiplicidade foi aceita para ${versions}. ${effect ? `Junções por esta relação acrescentam ${plural(effect.extra_rows, "linha", "linhas")}, e` : "Nas junções,"} cada linha multiplicada fica registrada nos diagnósticos da execução.`
+                  ? `Confirmada com ressalva: a multiplicidade foi aceita para ${decidedVersions}. ${effect ? `Junções por esta relação acrescentam ${plural(effect.extra_rows, "linha", "linhas")}, e` : "Nas junções,"} cada linha multiplicada fica registrada nos diagnósticos da execução.`
                   : `Confirmada como ${short}. A evidência sustenta a cardinalidade: cada linha de ${relation.from.dataset_key} aponta para no máximo uma de ${relation.to.dataset_key}.`}
             </p>
             <div className="panel-actions">
@@ -368,10 +382,11 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
         {accepting && effect && (
           <div className="caveat-form">
             <p className="eyebrow eyebrow-ab">Política: aceitar a multiplicidade</p>
-            <p>Uma linha de {relation.from.dataset_key} que aponta para um id repetido vira uma linha por cópia na junção. Com os dados atuais:</p>
+            <p>Uma linha de {relation.from.dataset_key} que aponta para um id repetido vira uma linha para cada linha do destino com aquele id na junção. Com os dados atuais:</p>
             <ul>
               <li>
-                <b>+{formatCount(effect.extra_rows)}</b> linhas na junção, vindas de {plural(effect.multiplied_rows, `linha de ${relation.from.dataset_key}`, `linhas de ${relation.from.dataset_key}`)} que{" "}
+                <b>+{formatCount(effect.extra_rows)}</b> linhas na junção, vindas de{" "}
+                {plural(effect.multiplied_rows, `linha de ${relation.from.dataset_key}`, `linhas de ${relation.from.dataset_key}`)} que{" "}
                 {effect.multiplied_rows === 1 ? "aponta" : "apontam"} para {plural(effect.repeated_keys, "id repetido", "ids repetidos")};
               </li>
               <li>somas e contagens que atravessarem a relação incluem essas linhas;</li>
@@ -409,8 +424,13 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
         )}
       </section>
 
+      {standing !== "rejected" && <IdentitySection relation={relation} />}
+
       <div>
-        <More title="Evidência completa" meta={`${plural(listChecks.length, "verificação", "verificações")}${fails ? ` · ${plural(fails, "falha", "falhas")}` : ""}${warns ? ` · ${plural(warns, "atenção", "atenções")}` : ""}`}>
+        <More
+          title="Evidência completa"
+          meta={`${plural(listChecks.length, "verificação", "verificações")}${fails ? ` · ${plural(fails, "ponto contra", "pontos contra")}` : ""}${warns ? ` · ${plural(warns, "atenção", "atenções")}` : ""}`}
+        >
           <p className="small-note">Verificações com seta abrem os registros.</p>
           <div className="ck-list">
             {listChecks.map((check) => (
@@ -467,5 +487,44 @@ function RelationBody({ relation, stale, model, onSelectRelation, onFocusTable, 
         </More>
       </div>
     </>
+  );
+}
+
+function IdentitySection({ relation }: { relation: Relationship }) {
+  const identity = useRelationshipIdentity();
+  const toast = useToast();
+  const from = `${relation.from.dataset_key}.${relation.from.column}`;
+  const to = `${relation.to.dataset_key}.${relation.to.column}`;
+  const declared = relation.identity_declared_at !== null;
+  const set = (value: boolean) =>
+    identity.mutate(
+      { id: relation.id, declared: value },
+      { onSuccess: () => toast(value ? "Identidade declarada: Comparações deixam de pedir confirmação para estas colunas" : "Declaração de identidade retirada") },
+    );
+  return (
+    <section className="identity" aria-labelledby={`identity-${relation.id}`}>
+      <h3 id={`identity-${relation.id}`}>Mesma entidade?</h3>
+      {declared ? (
+        <p>
+          Em {formatWhen(relation.identity_declared_at)}, você declarou que <span className="mono">{from}</span> e <span className="mono">{to}</span> identificam a mesma entidade.
+          Comparações entre estas duas colunas usam a declaração sem pedir confirmação. O Trace não verificou essa equivalência.
+        </p>
+      ) : (
+        <p>
+          Confirmar a relação autoriza usá-la para ligar tabelas. Isso não diz, sozinho, que <span className="mono">{from}</span> e <span className="mono">{to}</span> identificam a
+          mesma entidade. Se identificam, declare: Comparações entre estas duas colunas deixam de pedir essa confirmação.
+        </p>
+      )}
+      <div className="panel-actions">
+        <button type="button" className={`btn ${declared ? "btn-quiet" : ""}`} disabled={identity.isPending} onClick={() => set(!declared)}>
+          {declared ? "Retirar a declaração" : "Declarar que identificam a mesma entidade"}
+        </button>
+      </div>
+      {identity.error && (
+        <p role="alert" className="small-note text-b-deep">
+          {identity.error.message}
+        </p>
+      )}
+    </section>
   );
 }

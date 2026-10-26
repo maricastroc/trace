@@ -103,9 +103,41 @@ export function versionsOf(sides: Record<"a" | "b", { version: { id: string; num
   return `${sides.a.version.id}|${sides.b.version.id}`;
 }
 
+type TracedBrief = {
+  sides: Record<"a" | "b", { label: string; dataset: { key: string }; version: { id: string; number: number }; decisions_key?: string | null }>;
+  equivalence: { status: ComparisonEquivalence["status"]; reading?: string | null } | null;
+  summary: Core | null;
+};
+
+export function traceDifferences(done: TracedBrief, preview: { sides: TracedBrief["sides"]; equivalence: ComparisonEquivalence; summary: Core | null }) {
+  const reasons: string[] = [];
+  if (versionsOf(done.sides) !== versionsOf(preview.sides)) {
+    const used = (["a", "b"] as const).map((side) => `${done.sides[side].dataset.key} versão ${done.sides[side].version.number}`).join(" e ");
+    const now = (["a", "b"] as const).map((side) => `${preview.sides[side].dataset.key} versão ${preview.sides[side].version.number}`).join(" e ");
+    reasons.push(`A execução usou ${used}; a prévia usa ${now}.`);
+  }
+  if (!done.sides.a.decisions_key || !done.sides.b.decisions_key) {
+    reasons.push("A execução foi gravada antes de o Trace registrar as relações e vigências usadas; não dá para confirmar que são as mesmas de agora.");
+  } else {
+    for (const side of ["a", "b"] as const) {
+      if (done.sides[side].decisions_key !== preview.sides[side].decisions_key) {
+        reasons.push(`As relações ou a vigência usadas em ${done.sides[side].label} mudaram desde a execução. Abra a execução para ver o que mudou.`);
+      }
+    }
+  }
+  const was = done.equivalence;
+  if (was && (was.status !== preview.equivalence.status || (was.reading ?? null) !== (preview.equivalence.reading?.kind ?? null))) {
+    reasons.push(`A equivalência das chaves estava "${EQUIVALENCE_TAG[was.status]}" e agora está "${EQUIVALENCE_TAG[preview.equivalence.status]}".`);
+  }
+  if (reasons.length === 0 && !sameNumbers(done.summary, preview.summary))
+    reasons.push("Com as mesmas versões e decisões, os números calculados agora são diferentes dos gravados.");
+  return reasons;
+}
+
 export const EQUIVALENCE_TAG: Record<ComparisonEquivalence["status"], string> = {
   same_field: "mesma coluna",
-  relation: "referência confirmada no Mapa",
+  map_declared: "declarada no Mapa",
+  relation: "relação confirmada no Mapa",
   declared: "declarada por você",
   unconfirmed: "sem confirmação",
 };

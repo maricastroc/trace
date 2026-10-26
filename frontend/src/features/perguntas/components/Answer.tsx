@@ -47,6 +47,7 @@ type Props = {
   outcome: Outcome | null;
   preview: Preview | null;
   run: RunDetail | null;
+  earlier: { run: RunDetail; reasons: string[] } | null;
   tracing: RunSummary | RunDetail | null;
   unit: string;
   context: string;
@@ -57,7 +58,30 @@ type Props = {
   remedy: { label: string; apply: () => void } | null;
 };
 
-export function Answer({ outcome, preview, run, tracing, unit, context, stale, notes, invOpen, onInvestigate, remedy }: Props) {
+function Earlier({ earlier, computed }: { earlier: NonNullable<Props["earlier"]>; computed: boolean }) {
+  return (
+    <div className="ans-earlier" role="note">
+      <p>
+        <b>
+          Execução rastreada {shortId(earlier.run.id)}, {formatWhen(earlier.run.finished_at)}
+        </b>
+        : não corresponde ao estado atual.
+      </p>
+      <ul>
+        {earlier.reasons.map((reason) => (
+          <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+      <p>
+        {computed
+          ? "Ela continua gravada como estava. O número ao lado é uma prévia com os dados e as decisões de agora; rastreie de novo para gravá-lo."
+          : "Ela continua gravada como estava. Com os dados e as decisões de agora, a pergunta ainda não pode ser calculada."}
+      </p>
+    </div>
+  );
+}
+
+export function Answer({ outcome, preview, run, earlier, tracing, unit, context, stale, notes, invOpen, onInvestigate, remedy }: Props) {
   const [decisions, setDecisions] = useState(false);
   const value = outcome ? answerValue(outcome) : null;
 
@@ -72,17 +96,21 @@ export function Answer({ outcome, preview, run, tracing, unit, context, stale, n
               : "Uma decisão pendente muda o resultado. O Trace não calcula com suposições: resolva a pendência abaixo ou mude a pergunta."}
           </p>
           <Needs issues={preview.pending} />
+          {earlier && <Earlier earlier={earlier} computed={false} />}
         </div>
       </section>
     );
   }
 
   const pending = preview?.pending ?? [];
-  const warnings = notes.filter((note) => note.kind === "warn");
+  const warnings = [
+    ...(preview?.issues ?? []).filter((issue) => issue.severity === "warning").map((issue) => issue.message),
+    ...notes.filter((note) => note.kind === "warn").map((note) => note.text),
+  ];
 
   return (
     <section className="q-answer" id="q-answer" tabIndex={-1} aria-label="Resposta" aria-busy={stale}>
-      <div className="ans-main">
+      <div className="ans-main" aria-live="polite" aria-atomic="true">
         <AnswerNumber value={value} unit={unit} />
         <div className="ans-text">
           <p className="answer-unit">{unit}</p>
@@ -110,9 +138,10 @@ export function Answer({ outcome, preview, run, tracing, unit, context, stale, n
             {decisions && <Needs id="q-decisions" issues={pending} />}
           </>
         )}
-        {warnings.map((note) => (
-          <p key={note.text} className="ans-warn">
-            {note.text}
+        {earlier && !tracing && <Earlier earlier={earlier} computed />}
+        {warnings.map((text) => (
+          <p key={text} className="ans-warn">
+            {text}
           </p>
         ))}
         <div className="q-actions">

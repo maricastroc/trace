@@ -38,7 +38,7 @@ export function GroupBars({ groups, total, sumOfGroups, unit, noun, onPick }: Pr
           const width = `${Math.max(0.6, ((numeric(group.value) ?? 0) / max) * 100)}%`;
           const body = (
             <>
-              <span className={`bk ${group.key === null ? "empty" : ""}`}>{group.key === null ? `sem ${noun}` : group.label}</span>
+              <span className={`bk ${group.key === null ? "empty" : ""}`}>{group.key === null ? `sem valor de ${noun}` : group.label}</span>
               <span className="bar-track" aria-hidden>
                 <span className="bar-fill" style={{ width }} />
               </span>

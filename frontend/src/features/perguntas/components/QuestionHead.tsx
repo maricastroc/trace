@@ -88,7 +88,7 @@ export function QuestionHead({ catalog, question, valueLabel, busy, onChange }: 
               data-tok={part.kind}
               aria-haspopup="listbox"
               aria-expanded={open?.kind === part.kind}
-              aria-label={`${part.text}. Alterar ${part.what}`}
+              aria-label={`${part.text}${part.pending ? " (pendente: escolha antes de calcular)" : ""}. Alterar ${part.what}`}
               onClick={(event) => {
                 const anchor = event.currentTarget;
                 const container = anchor.closest<HTMLElement>(".q-head");

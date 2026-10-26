@@ -7,7 +7,7 @@ import { formatCount, plural } from "@/lib/format";
 import type { ComparisonIdentity, ComparisonRule, ComparisonSummary } from "@/lib/types";
 import type { Catalog } from "@/features/perguntas/model/catalog";
 import { buildScene, tabText, tabWidth, type Stage } from "../model/overprint";
-import { answerSentence, explanationText, proofOf, unitSentence } from "../model/reconciliation";
+import { answerSentence, explanationText, proofLabel, unitSentence } from "../model/reconciliation";
 import { labelsFor, readingOf, titleOf, type ResultModel } from "../model/result";
 import { describeSelection, RULE_TEXT } from "../model/spec";
 import { focusOf, targetKey, targetLabel, type Target } from "../model/targets";
@@ -144,7 +144,7 @@ export function Result({ catalog, result, stale, status, trace, onEdit, onRules,
           eyebrow: "Possível · hipótese",
           tone: "ab",
           title: `${plural(summary.explanations.only_a.possible_match, "par possível", "pares possíveis")}`,
-          sub: "a mesma identidade escrita de outro jeito",
+          sub: "pode ser a mesma identidade escrita de outro jeito",
           body: <HypothesisBody result={result} labels={labels} trace={trace} onPick={setIdentity} onAccept={accept} onKeep={onKeep} />,
         };
       case "repeated":
@@ -166,7 +166,7 @@ export function Result({ catalog, result, stale, status, trace, onEdit, onRules,
         const counts = current.side === "a" ? summary.explanations.only_a : summary.explanations.only_b;
         const text = explanationText(current.explanation, current.side, labels);
         return {
-          eyebrow: `Só em ${current.side.toUpperCase()} · ${labels[current.side]} · ${proofOf(current.explanation) === "possible" ? "possível" : "comprovado"}`,
+          eyebrow: `Só em ${current.side.toUpperCase()} · ${labels[current.side]} · ${proofLabel(current.explanation, true)}`,
           tone: current.side,
           title: `${ids(counts[current.explanation] ?? 0)} · ${text.title}`,
           sub: text.sub,

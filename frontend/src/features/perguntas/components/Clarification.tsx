@@ -58,6 +58,7 @@ export function Clarification({ question, table, unit, onChoose }: Props) {
   if (!period) return null;
   const label = `vigentes em ${periodLabel(period.from, period.to)}`;
   const data = readings.data?.data;
+  const pendingReading = data?.readings.find((option) => option.pending.length > 0) ?? null;
 
   return (
     <section className="clar" aria-labelledby="clar-title">
@@ -87,7 +88,15 @@ export function Clarification({ question, table, unit, onChoose }: Props) {
                   <button type="button" className="clar-opt" data-reading={reading} aria-describedby={criteria ? `crit-${reading}` : undefined} onClick={() => onChoose(reading)}>
                     <span className="co-num">
                       <b>{option?.computed ? formatAnswer(option.value) : "—"}</b>
-                      <small>{option?.computed ? unit : "depende de uma decisão"}</small>
+                      <small>
+                        {option?.computed
+                          ? option.pending.length > 0
+                            ? `${unit} · provisório`
+                            : unit
+                          : option?.reason === "failed"
+                            ? "não foi possível calcular"
+                            : "depende de uma decisão"}
+                      </small>
                     </span>
                     <span className="co-body">
                       <span className="co-t">
@@ -121,7 +130,14 @@ export function Clarification({ question, table, unit, onChoose }: Props) {
           <button type="button" className="btn-link justify-self-start text-[15px]" aria-expanded={criteria} onClick={() => setCriteria((value) => !value)}>
             {criteria ? "Ocultar critérios" : "Ver critérios exatos"}
           </button>
-          {data.readings.some((option) => !option.computed) && <Needs issues={data.readings.find((option) => !option.computed)?.pending ?? []} />}
+          {pendingReading && (
+            <div className="clar-pending">
+              {pendingReading.computed && (
+                <p className="small-note">Os números marcados como provisórios usam uma relação ainda não decidida no Mapa. Eles mostram o efeito, mas não podem ser rastreados até a decisão.</p>
+              )}
+              <Needs issues={pendingReading.pending} />
+            </div>
+          )}
         </>
       )}
     </section>

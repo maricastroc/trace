@@ -47,6 +47,16 @@ import { useToken } from "./workspace";
 
 type Interval<T> = number | false | ((data: T | undefined) => number | false);
 
+function useSearch<T>(key: unknown[], path: string | null, body: Record<string, unknown>, options: { keepPrevious?: boolean } = {}) {
+  const token = useToken();
+  return useQuery({
+    queryKey: [...key, token],
+    queryFn: ({ signal }) => request<T>(path!, { method: "POST", body, token, signal }),
+    enabled: token !== null && path !== null,
+    placeholderData: options.keepPrevious ? keepPreviousData : undefined,
+  });
+}
+
 function useApi<T>(key: unknown[], path: string | null, options: { refetchInterval?: Interval<T>; keepPrevious?: boolean } = {}) {
   const token = useToken();
   return useQuery({
@@ -196,10 +206,10 @@ export function useVersions(versionIds: string[]) {
 }
 
 export function useRowsWhere(versionId: string | null, column: string | null, value: string | null, perPage = 10, page = 1) {
-  const params = new URLSearchParams({ column: column ?? "", value: value ?? "", page: String(page), per_page: String(perPage) });
-  return useApi<Paginated<SourceRow>>(
+  return useSearch<Paginated<SourceRow>>(
     ["version-rows-where", versionId, column, value, perPage, page],
-    versionId && column && value !== null ? `/dataset-versions/${versionId}/rows?${params.toString()}` : null,
+    versionId && column && value !== null ? `/dataset-versions/${versionId}/rows/search` : null,
+    { column, value, page, per_page: perPage },
     { keepPrevious: true },
   );
 }
@@ -235,6 +245,19 @@ export function useDecideRelationship() {
     mutationFn: ({ id, action, policy }: { id: string; action: RelationshipDecision; policy?: RelationshipPolicy }) =>
       request<{ data: Relationship }>(`/relationships/${id}/${action}`, { method: "POST", token, body: policy ? { policy } : undefined }),
     onSuccess: invalidate,
+  });
+}
+
+export function useRelationshipIdentity() {
+  const token = useToken();
+  const invalidate = useRelationshipInvalidation();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, declared }: { id: string; declared: boolean }) => request<{ data: Relationship }>(`/relationships/${id}/identity`, { method: declared ? "POST" : "DELETE", token }),
+    onSuccess: () => {
+      invalidate();
+      client.invalidateQueries({ queryKey: ["comparison-preview"] });
+    },
   });
 }
 
@@ -457,11 +480,10 @@ export function useComparisonRuns(comparisonId: string | null) {
 export type IdentityFilters = { category?: string; explanation?: string; repeated?: "a" | "b"; changed?: boolean; search?: string };
 
 export function useComparisonIdentities(runId: string | null, filters: IdentityFilters, page: number, perPage = 12) {
-  return useApi<Paginated<ComparisonIdentity>>(
+  return useSearch<Paginated<ComparisonIdentity>>(
     ["comparison-identities", runId, filters, page, perPage],
-    runId
-      ? `/comparison-runs/${runId}/identities${query({ category: filters.category, explanation: filters.explanation, repeated: filters.repeated, changed: filters.changed ? 1 : undefined, search: filters.search, page, per_page: perPage })}`
-      : null,
+    runId ? `/comparison-runs/${runId}/identities/search` : null,
+    { category: filters.category, explanation: filters.explanation, repeated: filters.repeated, changed: filters.changed ? 1 : undefined, search: filters.search, page, per_page: perPage },
     { keepPrevious: true },
   );
 }
@@ -469,9 +491,10 @@ export function useComparisonIdentities(runId: string | null, filters: IdentityF
 export function useComparisonRows(runId: string | null, side: "a" | "b", target: { identity: string } | { empty: true } | null, state: "selected" | "excluded" | "all", page: number) {
   const identity = target && "identity" in target ? target.identity : undefined;
   const empty = target && "empty" in target ? 1 : undefined;
-  return useApi<{ data: ComparisonRow[]; meta: ComparisonRowsMeta }>(
+  return useSearch<{ data: ComparisonRow[]; meta: ComparisonRowsMeta }>(
     ["comparison-rows", runId, side, identity, empty, state, page],
-    runId && target ? `/comparison-runs/${runId}/rows${query({ side, identity, empty, state, page, per_page: 10 })}` : null,
+    runId && target ? `/comparison-runs/${runId}/rows/search` : null,
+    { side, identity, empty, state, page, per_page: 10 },
     { keepPrevious: true },
   );
 }

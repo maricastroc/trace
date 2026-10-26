@@ -21,6 +21,7 @@ export type CatalogRelation = {
   standing: RelationshipStandingKey;
   usable: boolean;
   reason: string | null;
+  identity: boolean;
 };
 
 export type Catalog = {
@@ -31,7 +32,7 @@ export type Catalog = {
 };
 
 const LABEL_NAMES = ["nome", "name", "titulo", "title", "descricao", "rotulo", "label"];
-const NUMERIC = /^-?\d+([.,]\d+)?$/;
+const NUMERIC = /^-?\d+(\.\d+)?$/;
 const CATEGORY_LIMIT = 60;
 
 function lowerFirst(text: string) {
@@ -66,6 +67,7 @@ export function buildCatalog(datasets: DatasetSummary[], versions: Record<string
       standing: relationship.standing.key,
       usable: relationship.standing.usable,
       reason: relationship.standing.reason,
+      identity: relationship.identity_declared_at !== null,
     }));
   return { tables, byId, relations, relationById: new Map(relations.map((relation) => [relation.id, relation])) };
 }
@@ -80,7 +82,7 @@ export function dateColumns(table: CatalogTable) {
 
 export function isSummable(candidate: CatalogColumn) {
   if (candidate.type === "number") return true;
-  if (candidate.type !== "text") return false;
+  if (candidate.type !== "text" || candidate.profile.decimal_ambiguous) return false;
   return candidate.profile.samples.length > 0 && candidate.profile.samples.every((sample) => NUMERIC.test(sample.trim()));
 }
 

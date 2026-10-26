@@ -531,3 +531,32 @@
   background: #9a0f4f;
   border-color: #9a0f4f;
 }
+
+.mapa .identity {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px dashed var(--ab);
+  background: var(--sheet);
+}
+
+.mapa .identity h3 {
+  margin: 0;
+  font: 500 12px/1.2 var(--f-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ab);
+}
+
+.mapa .identity p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.mapa .identity .mono {
+  font-family: var(--f-mono);
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}

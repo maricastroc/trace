@@ -52,14 +52,14 @@ function aggregateFacts(run: RunDetail, question: QuestionSpec, input: number, r
   const column = question.measure.column;
   const facts = [
     grouped
-      ? `${plural(input, "registro organizado", "registros organizados")} em ${plural(results, "grupo", "grupos")} por ${groupNames.join(" e ")}`
+      ? `${plural(input, "linha organizada", "linhas organizadas")} em ${plural(results, "grupo", "grupos")} por ${groupNames.join(" e ")}`
       : results === 0
-        ? "Nenhum registro chegou ao cálculo"
-        : `${plural(input, "registro entra", "registros entram")} no cálculo, sem agrupar: 1 resultado`,
+        ? "Nenhuma linha chegou ao cálculo"
+        : `${plural(input, "linha entra", "linhas entram")} no cálculo, sem agrupar: 1 resultado`,
   ];
 
   if (question.measure.function === "count") {
-    facts.push(`Total contado: ${plural(numeric(total) ?? 0, "registro", "registros")}`);
+    facts.push(`Total contado: ${plural(numeric(total) ?? 0, "linha", "linhas")}`);
     if (copied) facts.push("Contando linhas, as cópias criadas pela ligação também entram no total");
   } else if (question.measure.function === "count_distinct") {
     const distinct = numeric(total) ?? 0;
@@ -81,7 +81,7 @@ function aggregateFacts(run: RunDetail, question: QuestionSpec, input: number, r
   if (grouped && totals) {
     const sum = numeric(totals.sum_of_groups[ANSWER]);
     const value = numeric(total);
-    if (sum !== null && value !== null && sum !== value) facts.push(`Somando os grupos dá ${formatAnswer(sum)}; o total é calculado sobre todos os registros, não somado`);
+    if (sum !== null && value !== null && sum !== value) facts.push(`Somando os grupos dá ${formatAnswer(sum)}; o total é calculado sobre todas as linhas, não somado`);
   }
   return facts;
 }

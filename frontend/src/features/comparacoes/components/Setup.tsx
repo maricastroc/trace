@@ -103,7 +103,13 @@ export function Setup({ catalog, recipes, naming, draft, suggestions, editing, o
               Cancelar
             </button>
           )}
-          {!complete && <span className="small-note">Escolha a tabela (ou a execução) e a coluna identificadora dos dois lados.</span>}
+          {!complete && (
+            <span className="small-note">
+              {[draft.a, draft.b].some((side) => side.kind === "population" && side.period?.kind === "validity" && side.period.reading === null)
+                ? "Escolha a leitura da vigência em cada lado que usa vigência."
+                : "Escolha a tabela (ou a execução) e a coluna identificadora dos dois lados."}
+            </span>
+          )}
           {complete && !ready && <span className="small-note">Confirme acima que as colunas identificam a mesma entidade.</span>}
         </div>
       </div>
@@ -176,7 +182,7 @@ function SideEditor({ side, catalog, recipes, naming, draft, other, onChange }: 
       </div>
 
       <div className="se-source">
-        <div className="seg small" role="group" aria-label={`Lado ${sideName(side)}: de onde vêm os registros`}>
+        <div className="seg small" role="group" aria-label={`Lado ${sideName(side)}: de onde vêm as linhas`}>
           <button type="button" aria-pressed={draft.kind === "population"} onClick={() => draft.kind !== "population" && onChange(emptyPopulation())}>
             Tabela
           </button>
@@ -244,7 +250,7 @@ function periodChoices(table: CatalogTable): PeriodChoice[] {
     choices.push({ key: `date:${candidate.key}`, label: `Com ${candidate.key} no ano`, make: (year) => ({ kind: "date", column: candidate.key, ...yearRange(year) }) });
   }
   if (table.validity) {
-    choices.push({ key: "validity", label: "Pela vigência declarada, no ano", make: (year) => ({ kind: "validity", reading: "active_any", ...yearRange(year) }) });
+    choices.push({ key: "validity", label: "Pela vigência declarada, no ano", make: (year) => ({ kind: "validity", reading: null, ...yearRange(year) }) });
   }
   return choices;
 }
@@ -355,6 +361,9 @@ function Criteria({ table, catalog, draft, onChange }: { table: CatalogTable; ca
                 value={period.reading ?? ""}
                 onChange={(event) => onChange({ ...draft, period: { ...period, reading: (event.target.value || null) as ValidityReading | null } })}
               >
+                <option value="" disabled>
+                  Escolha a leitura: o Trace não escolhe por você
+                </option>
                 {READINGS.map((reading) => (
                   <option key={reading} value={reading}>
                     {READING_TITLE[reading]} {year ?? ""} — {READING_HINT[reading]}
@@ -452,8 +461,8 @@ function KeySentence({ catalog, draft, recipes }: { catalog: Catalog; draft: Dra
   return (
     <div className="key-sentence" aria-live="polite">
       <p className="ks-main">
-        Dois registros representam a mesma identidade quando <b className="ks-a">{name(a, draft.a.key)}</b> (lado A) for igual a <b className="ks-b">{name(b, draft.b.key)}</b>{" "}
-        (lado B).
+        Duas linhas representam a mesma identidade quando <b className="ks-a">{name(a, draft.a.key)}</b> (lado A) for igual a <b className="ks-b">{name(b, draft.b.key)}</b> (lado
+        B).
       </p>
       {!complete && <p className="ks-why">Nenhuma coluna é escolhida pelo nome: escolha a coluna identificadora de cada lado.</p>}
       {typeA && typeB && typeA !== typeB && (

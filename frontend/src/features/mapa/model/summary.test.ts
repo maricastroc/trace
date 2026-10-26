@@ -14,7 +14,7 @@ describe("relationsSummary", () => {
       relation("c", ["y", "c"], ["z", "id"], "confirmed"),
       relation("d", ["z", "d"], ["y", "id"], "rejected"),
     ];
-    expect(relationsSummary(relations)).toBe("2 relações aguardam sua decisão · 1 confirmada · 1 rejeitada · 1 pede atenção");
+    expect(relationsSummary(relations)).toBe("2 sugestões de relação aguardam sua decisão · 1 confirmada · 1 rejeitada · 1 pede atenção");
   });
 
   it("names relations kept with a caveat and relations that need review", () => {
