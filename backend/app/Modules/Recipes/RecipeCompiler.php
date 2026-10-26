@@ -30,12 +30,19 @@ final class RecipeCompiler
     /** @var array<int, Dataset> */
     private array $datasets = [];
 
-    public function compile(Workspace $workspace, mixed $baseDatasetId, mixed $steps): CompiledRecipe
+    /** @var array<string, string> */
+    private array $pinned = [];
+
+    /**
+     * @param  array<string, string>  $pinnedVersions  dataset id => version id
+     */
+    public function compile(Workspace $workspace, mixed $baseDatasetId, mixed $steps, array $pinnedVersions = []): CompiledRecipe
     {
         $this->issues = [];
         $this->inputs = [];
         $this->versions = [];
         $this->datasets = [];
+        $this->pinned = $pinnedVersions;
 
         $base = is_string($baseDatasetId)
             ? $workspace->datasets()->with('latestVersion.columns')->find($baseDatasetId)
@@ -412,8 +419,8 @@ final class RecipeCompiler
         $groupBy = $raw['group_by'] ?? null;
         $measures = $raw['measures'] ?? null;
 
-        if (! is_array($groupBy) || ! array_is_list($groupBy) || $groupBy === [] || count($groupBy) > 5) {
-            $this->issue('error', 'aggregate.group_invalid', 'Escolha de 1 a 5 colunas para agrupar.', $position, "{$path}.group_by");
+        if (! is_array($groupBy) || ! array_is_list($groupBy) || count($groupBy) > 5) {
+            $this->issue('error', 'aggregate.group_invalid', 'Escolha até 5 colunas para agrupar, ou nenhuma para calcular sobre todos os registros.', $position, "{$path}.group_by");
 
             return null;
         }
@@ -506,6 +513,14 @@ final class RecipeCompiler
     private function addInput(Dataset $dataset): array
     {
         $version = $dataset->latestVersion;
+        if (isset($this->pinned[$dataset->id])) {
+            $pinned = $dataset->versions()->with('columns')->find($this->pinned[$dataset->id]);
+            if ($pinned === null) {
+                $this->issue('error', 'recipe.version_unavailable', "A versão escolhida de {$dataset->key} não existe mais.", null, 'base_dataset_id', ['dataset_id' => $dataset->id]);
+            } else {
+                $version = $pinned;
+            }
+        }
         $position = count($this->inputs);
         $this->versions[$position] = $version->columns->pluck('inferred_type', 'key')->all();
         $this->datasets[$position] = $dataset;

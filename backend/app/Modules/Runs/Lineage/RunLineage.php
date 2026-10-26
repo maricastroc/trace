@@ -292,7 +292,7 @@ final class RunLineage
 
         $rows = DB::select(
             'SELECT rr.result_no, t.end_step, t.exclusion_code, count(*) AS n FROM run_tuples t '.implode(' ', $joins).
-            ' JOIN run_result_rows rr ON rr.run_id = t.run_id AND '.implode(' AND ', $conditions).
+            ' JOIN run_result_rows rr ON rr.run_id = t.run_id'.($conditions === [] ? '' : ' AND '.implode(' AND ', $conditions)).
             " WHERE t.run_id = ? AND t.fate = 'excluded' GROUP BY rr.result_no, t.end_step, t.exclusion_code ORDER BY t.end_step",
             [...$joinBindings, ...$conditionBindings, $run->id],
         );
@@ -583,7 +583,7 @@ final class RunLineage
 
         $inputs = array_values(array_unique(array_column($aggregate['group_by'], 'input')));
         $missing = implode(' OR ', array_fill(0, count($inputs), 'NOT EXISTS (SELECT 1 FROM run_tuple_sources s WHERE s.run_id = t.run_id AND s.tuple_no = t.tuple_no AND s.input_position = ?)'));
-        $unattributable = DB::select(
+        $unattributable = $inputs === [] ? [] : DB::select(
             "SELECT t.end_step, count(*) AS n FROM run_tuples t
              WHERE t.run_id = ? AND t.fate = 'excluded' AND ({$missing})
              GROUP BY t.end_step ORDER BY t.end_step",
@@ -597,7 +597,7 @@ final class RunLineage
         ));
 
         return [
-            'group' => $groupLabel,
+            'group' => $groupLabel === '' ? 'todos os registros' : $groupLabel,
             'matching' => array_map(fn (object $row) => [
                 'step_position' => (int) $row->end_step,
                 'step_title' => $titles[(int) $row->end_step] ?? null,
@@ -627,7 +627,7 @@ final class RunLineage
             $bindings[] = $values[$group['output']] ?? null;
         }
 
-        return [implode(' AND ', $clauses), $bindings];
+        return [$clauses === [] ? 'TRUE' : implode(' AND ', $clauses), $bindings];
     }
 
     private function aggregateStep(Run $run): ?array

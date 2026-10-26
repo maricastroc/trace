@@ -82,6 +82,8 @@ final class RecipeController
             'base_dataset_id' => $compiled->baseDatasetId,
             'steps' => $steps,
             'revision' => $changed ? $model->revision + 1 : $model->revision,
+            'question' => $changed ? null : $model->question,
+            'question_key' => $changed ? null : $model->question_key,
         ])->save();
 
         return response()->json(['data' => $this->present($workspace, $model->load('baseDataset'), $compiled)]);
@@ -149,6 +151,8 @@ final class RecipeController
                 'name' => $recipe->baseDataset->name,
             ],
             'definition' => ['base_dataset_id' => $recipe->base_dataset_id, 'steps' => $recipe->steps],
+            'question' => $recipe->question,
+            'question_key' => $recipe->question_key,
             'compiled' => $this->compiledPayload($compiled),
             'last_run' => $lastRun instanceof Run ? RunPresenter::summary($lastRun) : null,
             'created_at' => $recipe->created_at?->toIso8601String(),

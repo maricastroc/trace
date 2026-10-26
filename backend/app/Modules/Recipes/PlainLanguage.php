@@ -94,20 +94,24 @@ final class PlainLanguage
 
     private static function aggregate(array $step, array $inputs): array
     {
-        $groups = implode(' e ', array_map(fn (array $g) => self::columnLabel($inputs, $g['input'], $g['column']), $step['group_by']));
+        $label = fn (array $c): string => ($c['input'] ?? 0) === 0 ? self::columnLabel($inputs, 0, $c['column']) : "{$c['alias']}.{$c['column']}";
+        $groups = implode(' e ', array_map($label, $step['group_by']));
         $sums = array_values(array_filter($step['measures'], fn (array $m) => $m['function'] === 'sum'));
         $counts = array_filter($step['measures'], fn (array $m) => $m['function'] === 'count');
         $distinct = array_values(array_filter($step['measures'], fn (array $m) => $m['function'] === 'count_distinct'));
         $parts = [];
         if ($sums !== []) {
-            $parts[] = 'Soma '.implode(' e ', array_map(fn (array $m) => self::columnLabel($inputs, $m['input'], $m['column']), $sums));
+            $parts[] = 'Soma '.implode(' e ', array_map($label, $sums));
         }
         if ($distinct !== []) {
-            $parts[] = ($parts === [] ? 'Conta' : 'conta').' valores diferentes de '.implode(' e ', array_map(fn (array $m) => self::columnLabel($inputs, $m['input'], $m['column']), $distinct));
+            $parts[] = ($parts === [] ? 'Conta' : 'conta').' valores diferentes de '.implode(' e ', array_map($label, $distinct));
         }
-        $headline = $parts === []
-            ? "Conta os registros por {$groups}"
-            : implode(' e ', $parts)." por {$groups}".($counts === [] ? '' : ' e conta os registros');
+        $by = $groups === '' ? ' em todos os registros' : " por {$groups}";
+        $headline = match (true) {
+            $parts === [] && $groups === '' => 'Conta todos os registros que chegam ao cálculo',
+            $parts === [] => "Conta os registros por {$groups}",
+            default => implode(' e ', $parts).$by.($counts === [] ? '' : ' e conta os registros'),
+        };
 
         return ['headline' => $headline, 'drops' => []];
     }

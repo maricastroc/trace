@@ -13,11 +13,11 @@ class Recipe extends Model
 {
     use HasUlids;
 
-    protected $fillable = ['workspace_id', 'name', 'description', 'base_dataset_id', 'steps', 'revision'];
+    protected $fillable = ['workspace_id', 'name', 'description', 'base_dataset_id', 'steps', 'revision', 'question', 'question_key'];
 
     protected function casts(): array
     {
-        return ['steps' => 'array'];
+        return ['steps' => 'array', 'question' => 'array'];
     }
 
     public function baseDataset(): BelongsTo

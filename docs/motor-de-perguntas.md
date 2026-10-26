@@ -57,3 +57,41 @@ Começou antes do período, começou depois, terminou antes ou terminou durante 
   - Ela se recusa a calcular, e diz qual decisão falta, quando a pendência muda o resultado: relação rejeitada, relação para reavaliar, destino com ids repetidos sem política ou vigência não declarada.
 - **Execução rastreável:** grava versões, regras, decisões, resultados, totais e linhagem.
 - **Equivalência:** com as mesmas versões, regras e decisões, prévia e execução produzem os mesmos resultados e totais. Versões diferentes podem produzir resultados diferentes; uma execução antiga continua apontando para as versões que usou.
+
+## Pergunta estruturada
+
+A frase editável de Perguntas é só a forma de ler e editar uma pergunta estruturada. É ela que o backend valida (`QuestionTranslator`) e converte em receita. O frontend não calcula nada.
+
+```json
+{
+  "base_dataset_id": "tabela cujas linhas são contadas",
+  "measure": { "function": "count | count_distinct | sum", "column": "coluna da tabela, ou null para count" },
+  "period": null
+    | { "kind": "date", "column": "coluna de data da tabela", "from": "AAAA-MM-DD", "to": "AAAA-MM-DD" }
+    | { "kind": "validity", "reading": "started | active_any | active_at_end | null", "from": "…", "to": "…" },
+  "dimension": null
+    | { "relationships": ["ids das relações, da tabela até o recorte"], "column": "coluna da última tabela", "label_column": "rótulo ou null", "value": "valor ou null" }
+}
+```
+
+### Validação
+
+- A medida usa uma coluna da própria tabela. A soma recusa colunas de data e aceita colunas com textos; valores que não são números ficam fora da soma, com diagnóstico.
+- O período por data exige uma coluna do tipo data. O período por vigência usa a declaração da tabela e não aceita outra regra.
+- O caminho até o recorte tem no máximo 3 relações. Cada relação sai da tabela alcançada pela anterior (sentido N:1) e não volta a uma tabela já visitada.
+- O rótulo só é aceito quando a coluna do recorte não repete valores. Assim, agrupar pelo rótulo nunca divide um mesmo valor em dois grupos.
+
+### Conversão em receita
+
+1. Período por data: filtro `coluna entre de e até`. Período por vigência: filtro de vigência com a leitura escolhida.
+2. Uma junção por relação do caminho. Para agrupar, a junção mantém quem não encontra par (`left`), que vira um grupo próprio e continua no total. Para um valor só, a junção exige o par (`inner`), e quem não encontra par sai com o motivo.
+3. Recorte por um valor: filtro `coluna = valor`, comparado como texto exato.
+4. Agregação final: medida `resposta`. Com agrupamento, agrupa pela coluna e pelo rótulo; sem agrupamento, calcula sobre todos os registros. Se a medida não é contagem de linhas, a agregação também conta as linhas (`registros`), para mostrar a diferença entre linhas e valores diferentes.
+
+### Leitura pendente
+
+Com o período por vigência e a leitura ainda vazia, a pergunta não é convertida. O endpoint `questions/readings` calcula uma prévia para cada leitura e devolve o critério exato de cada uma: quem entra, quem fica de fora, a regra sobre as colunas declaradas e o que é indeterminado. Sem declaração de vigência, nenhuma leitura é calculada.
+
+### Rastrear
+
+`questions/trace` compila a receita, recusa se houver decisões pendentes e grava a receita com a pergunta e uma chave (hash da pergunta normalizada). A mesma pergunta reaproveita a mesma receita e ganha uma nova execução; uma pergunta diferente ganha outra receita. Editar os passos de uma receita pela API de receitas desfaz o vínculo com a pergunta.

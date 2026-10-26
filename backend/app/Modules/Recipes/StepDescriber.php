@@ -105,6 +105,6 @@ final class StepDescriber
             default => "somar {$m['alias']}.{$m['column']} como {$m['name']}",
         }, $step['measures']));
 
-        return "Agrupar por {$groups} · {$measures}";
+        return $groups === '' ? "Calcular sobre todos os registros · {$measures}" : "Agrupar por {$groups} · {$measures}";
     }
 }

@@ -36,6 +36,7 @@ final class RecipePreview
                 ),
             ],
             'issues' => $compiled->issues,
+            'recipe_steps' => $compiled->steps,
             'pending' => array_values(array_filter($blockers, fn (array $issue) => $issue['severity'] === 'blocker')),
             'steps' => [],
             'columns' => null,

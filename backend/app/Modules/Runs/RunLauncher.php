@@ -2,6 +2,7 @@
 
 namespace App\Modules\Runs;
 
+use App\Modules\Recipes\CompiledRecipe;
 use App\Modules\Recipes\Recipe;
 use App\Modules\Recipes\RecipeCompiler;
 use App\Modules\Runs\Jobs\ExecuteRun;
@@ -27,11 +28,20 @@ final class RunLauncher
             throw new DomainError('recipe.empty', 'Adicione pelo menos um passo antes de executar.');
         }
 
-        $run = DB::transaction(function () use ($workspace, $recipe, $compiled) {
+        $run = $this->record($workspace, $compiled, $recipe);
+
+        ExecuteRun::dispatch($run->id)->afterCommit();
+
+        return $run->refresh();
+    }
+
+    public function record(Workspace $workspace, CompiledRecipe $compiled, ?Recipe $recipe): Run
+    {
+        return DB::transaction(function () use ($workspace, $recipe, $compiled) {
             $run = Run::create([
                 'workspace_id' => $workspace->id,
-                'recipe_id' => $recipe->id,
-                'recipe_revision' => $recipe->revision,
+                'recipe_id' => $recipe?->id,
+                'recipe_revision' => $recipe?->revision ?? 1,
                 'recipe_snapshot' => $compiled->snapshot($recipe),
                 'status' => Run::QUEUED,
                 'queued_at' => now(),
@@ -47,9 +57,5 @@ final class RunLauncher
 
             return $run;
         });
-
-        ExecuteRun::dispatch($run->id)->afterCommit();
-
-        return $run->refresh();
     }
 }

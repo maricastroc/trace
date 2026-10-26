@@ -2,6 +2,8 @@
 
 namespace App\Modules\Workspaces;
 
+use App\Modules\Comparisons\Comparison;
+use App\Modules\Comparisons\ComparisonRun;
 use App\Modules\Datasets\Dataset;
 use App\Modules\Recipes\Recipe;
 use App\Modules\Relationships\Relationship;
@@ -46,5 +48,15 @@ class Workspace extends Model
     public function runs(): HasMany
     {
         return $this->hasMany(Run::class);
+    }
+
+    public function comparisons(): HasMany
+    {
+        return $this->hasMany(Comparison::class);
+    }
+
+    public function comparisonRuns(): HasMany
+    {
+        return $this->hasMany(ComparisonRun::class);
     }
 }

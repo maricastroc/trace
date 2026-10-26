@@ -1,7 +1,9 @@
 <?php
 
+use App\Modules\Comparisons\Http\ComparisonController;
 use App\Modules\Datasets\Http\DatasetController;
 use App\Modules\Datasets\Http\DatasetVersionController;
+use App\Modules\Questions\Http\QuestionController;
 use App\Modules\Recipes\Http\RecipeController;
 use App\Modules\Relationships\Http\RelationshipController;
 use App\Modules\Runs\Http\RunController;
@@ -47,6 +49,18 @@ Route::prefix('v1')->group(function () {
         Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']);
         Route::post('recipes/{recipe}/runs', [RunController::class, 'store']);
         Route::post('recipes/{recipe}/preview', [RecipeController::class, 'preview']);
+
+        Route::post('questions/preview', [QuestionController::class, 'preview']);
+        Route::post('questions/readings', [QuestionController::class, 'readings']);
+        Route::post('questions/trace', [QuestionController::class, 'trace']);
+
+        Route::get('comparisons', [ComparisonController::class, 'index']);
+        Route::post('comparisons/preview', [ComparisonController::class, 'preview']);
+        Route::post('comparisons/trace', [ComparisonController::class, 'trace']);
+        Route::get('comparison-runs', [ComparisonController::class, 'runs']);
+        Route::get('comparison-runs/{run}', [ComparisonController::class, 'show']);
+        Route::get('comparison-runs/{run}/identities', [ComparisonController::class, 'identities']);
+        Route::get('comparison-runs/{run}/rows', [ComparisonController::class, 'rows']);
 
         Route::get('runs', [RunController::class, 'index']);
         Route::get('runs/{run}', [RunController::class, 'show']);

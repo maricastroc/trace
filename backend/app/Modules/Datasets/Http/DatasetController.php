@@ -19,7 +19,7 @@ final class DatasetController
 
     public function index(Workspace $workspace): JsonResponse
     {
-        $datasets = $workspace->datasets()->with('latestVersion')->orderBy('created_at')->get();
+        $datasets = $workspace->datasets()->with('latestVersion')->orderBy('created_at')->orderBy('id')->get();
 
         return response()->json(['data' => $datasets->map(fn (Dataset $d) => DatasetPresenter::summary($d))->all()]);
     }

@@ -60,7 +60,7 @@ class FlowsTest extends TestCase
             'Mantém refeições com data de 01/09/2026 a 30/09/2026',
             'Liga refeições a cozinhas por cozinha_id = id; quem não encontra par sai',
             'Mantém refeições de cozinhas com status “ativa”',
-            'Soma quantidade por municipio e conta os registros',
+            'Soma quantidade por cozinhas.municipio e conta os registros',
         ], $plain);
         $this->assertSame('data fora de 01/09/2026 a 30/09/2026', $run['steps'][0]['plain']['drops']['condition_false']);
         $this->assertSame('sem par em cozinhas', $run['steps'][1]['plain']['drops']['no_match']);
