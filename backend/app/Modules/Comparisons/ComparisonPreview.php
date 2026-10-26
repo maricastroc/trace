@@ -2,9 +2,11 @@
 
 namespace App\Modules\Comparisons;
 
+use App\Modules\Runs\Engine\ExecutionBudget;
 use App\Modules\Runs\Engine\ExecutionFailed;
 use App\Modules\Runs\Engine\Pipeline;
 use App\Modules\Runs\Lineage\RunLineage;
+use App\Modules\Support\MemoryBudget;
 use App\Modules\Workspaces\Workspace;
 
 final class ComparisonPreview
@@ -47,9 +49,12 @@ final class ComparisonPreview
             return ['reason' => 'blocked'] + $payload;
         }
 
+        MemoryBudget::atLeast(512);
+        $budget = ExecutionBudget::forPreview();
+
         try {
-            [$a, $stepsA] = $this->collect($plan->a);
-            [$b, $stepsB] = $this->collect($plan->b);
+            [$a, $stepsA] = $this->collect($plan->a, $budget);
+            [$b, $stepsB] = $this->collect($plan->b, $budget);
         } catch (ExecutionFailed $failure) {
             return ['reason' => 'failed', 'error' => $failure->toArray()] + $payload;
         }
@@ -68,13 +73,13 @@ final class ComparisonPreview
     /**
      * @return array{0: SideSet, 1: list<array>}
      */
-    private function collect(SidePlan $side): array
+    private function collect(SidePlan $side, ExecutionBudget $budget): array
     {
         if ($side->run !== null) {
             return [$this->collector->fromRun($side->run, $side->source()), $this->lineage->steps($side->run)];
         }
 
-        $outcome = $this->pipeline->execute($side->compiled->snapshot(null));
+        $outcome = $this->pipeline->execute($side->compiled->snapshot(null), (int) config('trace.limits.preview_tuples'), $budget);
 
         return [$this->collector->fromOutcome($outcome, $side->source()), $outcome->steps];
     }

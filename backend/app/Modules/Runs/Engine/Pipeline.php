@@ -13,14 +13,14 @@ final class Pipeline
         private readonly ProjectOperator $project,
     ) {}
 
-    public function execute(array $snapshot, ?int $maxTuples = null): ExecutionOutcome
+    public function execute(array $snapshot, ?int $maxTuples = null, ?ExecutionBudget $budget = null): ExecutionOutcome
     {
         $rows = [];
         foreach ($snapshot['inputs'] as $input) {
-            $rows[$input['position']] = $this->loadRows($input['version_id']);
+            $rows[$input['position']] = $this->loadRows($input['version_id'], $budget);
         }
 
-        $context = new ExecutionContext($snapshot['inputs'], $rows, $maxTuples ?? (int) config('trace.limits.tuples'));
+        $context = new ExecutionContext($snapshot['inputs'], $rows, $maxTuples ?? (int) config('trace.limits.tuples'), $budget);
 
         $alive = [];
         foreach (array_keys($rows[0]) as $rowId) {
@@ -34,6 +34,7 @@ final class Pipeline
         $totals = null;
 
         foreach ($snapshot['steps'] as $step) {
+            $budget?->guard($step['position']);
             $started = hrtime(true);
             $inputCount = count($alive);
 
@@ -77,9 +78,10 @@ final class Pipeline
         return new ExecutionOutcome($context->tuples, $context->diagnostics, $steps, $results, $columns, $totals);
     }
 
-    private function loadRows(string $versionId): array
+    private function loadRows(string $versionId, ?ExecutionBudget $budget): array
     {
         $rows = [];
+        $loaded = 0;
         $cursor = DB::table('source_rows')
             ->where('dataset_version_id', $versionId)
             ->orderBy('row_number')
@@ -88,6 +90,9 @@ final class Pipeline
 
         foreach ($cursor as $row) {
             $rows[(int) $row->id] = json_decode($row->values, true, 512, JSON_THROW_ON_ERROR);
+            if ($budget !== null && ++$loaded % 4096 === 0) {
+                $budget->guard(null);
+            }
         }
 
         return $rows;

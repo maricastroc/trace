@@ -7,6 +7,7 @@ use App\Modules\Questions\Http\QuestionController;
 use App\Modules\Recipes\Http\RecipeController;
 use App\Modules\Relationships\Http\RelationshipController;
 use App\Modules\Runs\Http\RunController;
+use App\Modules\Support\Http\LimitStatementTime;
 use App\Modules\Workspaces\Http\ResolveWorkspace;
 use App\Modules\Workspaces\Http\WorkspaceController;
 use Illuminate\Support\Facades\Route;
@@ -15,7 +16,7 @@ Route::prefix('v1')->group(function () {
     Route::get('meta', [WorkspaceController::class, 'meta']);
     Route::post('workspaces', [WorkspaceController::class, 'store'])->middleware('throttle:workspaces');
 
-    Route::middleware([ResolveWorkspace::class, 'throttle:workspace-api'])->group(function () {
+    Route::middleware([ResolveWorkspace::class, 'throttle:workspace-api', LimitStatementTime::class])->group(function () {
         Route::get('workspace', [WorkspaceController::class, 'show']);
 
         Route::get('datasets', [DatasetController::class, 'index']);
@@ -23,6 +24,8 @@ Route::prefix('v1')->group(function () {
         Route::post('imports/preview', [DatasetController::class, 'preview'])->middleware('throttle:uploads');
         Route::get('datasets/{dataset}', [DatasetController::class, 'show']);
         Route::delete('datasets/{dataset}', [DatasetController::class, 'destroy']);
+        Route::get('datasets/{dataset}/dependents', [DatasetController::class, 'dependents']);
+        Route::get('dataset-erasures', [DatasetController::class, 'erasures']);
         Route::put('datasets/{dataset}/validity', [DatasetController::class, 'declareValidity']);
         Route::delete('datasets/{dataset}/validity', [DatasetController::class, 'clearValidity']);
         Route::post('datasets/{dataset}/versions', [DatasetController::class, 'storeVersion'])->middleware('throttle:uploads');

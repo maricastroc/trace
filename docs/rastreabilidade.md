@@ -31,6 +31,17 @@ Sinais de defasagem no backend:
 
 A execução grava também a pergunta que a produziu (`recipe.question` no snapshot), para não depender da receita, que pode ser editada ou apagada.
 
+### Interpretação histórica
+
+Uma execução é um registro histórico: ao reabri-la, o Trace mostra a interpretação gravada, não uma releitura com as regras de hoje.
+
+- O texto em linguagem simples de cada passo (`steps[].plain`), o título e o resumo vêm do snapshot gravado.
+- O snapshot guarda `interpretation` (versão 1): os critérios exatos de cada vigência usada (`enters`, `leaves`, `rule`, `undetermined`, colunas e se o dia do fim conta). `GET runs/{run}` devolve `interpretation.recorded = true`.
+- Execuções gravadas antes disso devolvem `interpretation.recorded = false`, com os critérios recalculados a partir das regras gravadas; a interface pode avisar que o texto foi gerado depois.
+- As explicações de cada linha (por que saiu, por que foi multiplicada) são guardadas como fatos estruturados: código, valores e parâmetros. O texto delas é composto na leitura a partir desses fatos; os fatos não mudam.
+- Em Perguntas, quando a última execução não corresponde mais ao estado atual, o aviso permite "Abrir a execução gravada": a resposta passa a mostrar o número, os critérios e as relações daquele momento, com o aviso do que mudou separado, e "Voltar ao cálculo atual" retorna à prévia. Nada é recalculado nem alterado no registro.
+- Em Comparações, a execução aberta usa só o que foi gravado (definição, versões, equivalência e leitura, atribuição, resumo e identidades); as decisões que mudaram depois aparecem num aviso separado, e "Comparar com os dados atuais" abre a comparação atual sem tocar no registro.
+
 Ao julgar uma relação, o compilador usa as versões efetivamente ligadas: uma multiplicidade aceita só vale para as versões em que foi aceita, mesmo quando uma comparação fixa uma versão anterior; uma relação N:1 é bloqueada se o destino tiver valores repetidos na versão ligada. Uma ligação no sentido inverso (de um cadastro para as referências) é avisada (`join.reverse_multiplies`), porque multiplica linhas.
 
 ## Camadas da investigação e endpoints existentes
@@ -46,7 +57,7 @@ Os hooks correspondentes continuam em `frontend/src/lib/queries.ts`. A Rio não 
 ## Onde a investigação vive na interface
 
 - Não existe rota própria para a Rio. A investigação abre como camada da pergunta ou da comparação que a originou.
-- Em Perguntas, a investigação tem três abas: passos e registros (só depois de rastrear), critérios e relações, e a pergunta estruturada com a receita gerada.
+- Em Perguntas, a investigação tem três abas: passos e linhas (só depois de rastrear), critérios e relações, e a pergunta estruturada com a receita gerada.
 - Se for necessário um endereço compartilhável para uma execução, ele usará a experiência nova (por exemplo, dentro de `/perguntas`), nunca a visualização antiga.
 
 ## Comparações
@@ -64,8 +75,56 @@ O motor de Comparações (`docs/comparacoes.md`) segue a mesma separação entre
 - Erros inesperados da API respondem com uma mensagem genérica (`server_error`), sem a mensagem interna. Mensagens de erro de banco são gravadas sem os valores (`mask_bindings_in_exception_messages`), e os rastros de pilha não guardam argumentos.
 - Os testes não escrevem no registro de desenvolvimento (`LOG_CHANNEL=null`).
 
+- Perguntas e Comparações guardam a definição aberta no armazenamento local do navegador; o endereço leva só uma chave curta (`?q=` e `?c=`), para que valores de recorte não fiquem no histórico nem nos registros de acesso. Endereços antigos com a definição inteira continuam abrindo.
+
+## Ciclo de vida e exclusão de dados
+
+Onde os dados de um conjunto ficam:
+
+| Onde | O que guarda | Some quando |
+|---|---|---|
+| `storage/app/private/datasets/{id}/` | o CSV importado | o conjunto é apagado ou o espaço é limpo |
+| `dataset_versions`, `dataset_columns` | versões; perfil das colunas com até 5 exemplos e mínimo/máximo | apagados com o conjunto |
+| `source_rows` | todas as linhas | apagadas com o conjunto (bloqueado enquanto uma execução aponta para elas) |
+| `relationships.evidence` | exemplos de valores | a relação some com o conjunto |
+| `recipes` | a pergunta, que pode ter um valor de recorte | apagadas junto, quando partem do conjunto ou usam suas relações |
+| `runs` e linhagem (`run_tuple_sources`, `run_diagnostics`, `run_result_rows`) | ligação às linhas de origem, valores em diagnósticos e resultados | apagadas junto, quando usaram o conjunto |
+| `comparisons`, `comparison_runs`, `comparison_identities` | identificadores comparados | apagadas junto, quando usaram o conjunto |
+| `storage/logs/laravel.log` | erros; desde a Etapa 7, sem valores de SQL | fora do alcance da exclusão |
+
+Política:
+
+- Um conjunto sem histórico é removido com o arquivo e a pasta.
+- Um conjunto com histórico (execuções, perguntas ou comparações) só é apagado com confirmação explícita: a interface mostra o que será apagado e pede o nome da tabela digitado (`DELETE datasets/{id}` com `with_history` e `confirm`). `GET datasets/{id}/dependents` diz o que depende dele.
+- Quando apagar os dados pessoais entra em conflito com preservar a execução, apagar vence: a execução é apagada inteira, nunca pela metade. Uma execução sem as linhas de origem deixaria de ser auditável e não seria mais o que diz ser.
+- Fica um registro de auditoria sem dados das linhas (`dataset_erasures`, `GET dataset-erasures`): nome da tabela, versões, quantidade de linhas, tamanho, impressão digital (SHA-256) do arquivo, o que foi apagado e quando.
+- A exclusão não alcança cópias feitas fora do Trace (backups do banco, arquivos baixados, registros antigos do servidor), e a interface diz isso.
+- Espaços sem uso por 30 dias continuam sendo limpos por inteiro (`WorkspacePruner`), agora removendo também as pastas vazias.
+
+## Limites de processamento
+
+Prévias e buscas rodam dentro da requisição, com limites que falham de forma explicada:
+
+| Limite | Valor padrão | Ao estourar |
+|---|---|---|
+| Tempo de uma prévia (`TRACE_PREVIEW_SECONDS`) | 20 s, somado entre as três leituras de vigência | `limit.preview_time`, sem número parcial |
+| Linhas intermediárias da prévia (`TRACE_MAX_PREVIEW_TUPLES`) | 200.000 (o rastreio na fila aceita 500.000) | `limit.preview_tuples`, sugerindo rastrear ou reduzir o recorte |
+| Resultados devolvidos pela prévia (`TRACE_PREVIEW_RESULTS`) | 1.000 linhas; `results_total` e `results_truncated` dizem o resto | a tela avisa que mostra parte dos grupos; o total considera todos |
+| Tempo de cada consulta ao banco nas requisições (`TRACE_STATEMENT_SECONDS`) | 30 s; a fila não tem esse limite | 503 `request.timeout` com mensagem em português |
+| Busca de relações (`TRACE_DISCOVERY_SECONDS`) | 20 s; depois de importar, só os pares com a tabela nova | `meta.complete = false`, com quantos pares foram avaliados |
+| Memória das prévias e da importação | pelo menos 512 MB durante a operação | — |
+
+Medido numa máquina de desenvolvimento (Apple Silicon, PostgreSQL em Docker), com dados gerados:
+
+- importação de 50.000 linhas × 8 colunas: 1,8 s;
+- prévia de pergunta agrupada (50.000 linhas, 2.000 grupos): 0,3 s, 238 KB de resposta;
+- prévia de comparação 2.000 × 50.000: 0,3 s;
+- junção que gera 200.000 linhas intermediárias: 0,4 s e cerca de 280 MB de memória;
+- busca de relações com 2 tabelas: 0,3 s; com 10 tabelas de 5.000 linhas × 12 colunas: 4,9 s, crescendo com o quadrado do número de tabelas.
+
+Não foram medidos: servidores de produção, vários usuários ao mesmo tempo, arquivos acima de 50.000 linhas.
+
 ## Lacunas conhecidas
 
-- Perguntas não reabre uma execução antiga como foi gravada: quando ela não corresponde mais ao estado atual, a tela mostra o aviso com o que mudou, mas o número exibido é a prévia atual.
-- O texto em linguagem simples dos passos é gerado de novo a cada leitura; uma mudança de redação no código muda o texto de execuções antigas, nunca os números.
-- Prévias e descoberta de relações rodam dentro da requisição, sem limite de tempo próprio.
+- O texto das explicações de cada linha é composto na leitura a partir dos fatos gravados; uma mudança de redação no código muda o texto, nunca os fatos nem os números.
+- Perguntas reabre a última execução de cada pergunta; execuções anteriores da mesma pergunta continuam gravadas, mas não aparecem na lista.

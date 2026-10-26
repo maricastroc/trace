@@ -56,6 +56,8 @@ class ReproducibilityTest extends TestCase
         $this->assertSame(1, $old['recipe_revision']);
         $this->assertTrue($old['recipe_changed_since']);
         $this->assertStringContainsString('2026-09-01', $old['steps'][0]['summary']);
+        $this->assertStringContainsString('01/09/2026', $old['steps'][0]['plain']['headline'], 'the old run keeps the period it was described with');
+        $this->assertStringContainsString('01/10/2026', $after['steps'][0]['plain']['headline']);
         $this->assertSame($fingerprint, $this->fingerprint($before['id']));
         $this->assertStringContainsString('2026-10-01', $after['steps'][0]['summary']);
         $this->assertNotSame($fingerprint['results'], $this->fingerprint($after['id'])['results']);
@@ -100,9 +102,11 @@ class ReproducibilityTest extends TestCase
         $run = $this->runDemo($token);
         $recipeId = $this->demoIds($token)['recipe']['id'];
 
+        $before = $this->api($token, 'GET', "runs/{$run['id']}")->assertOk()->json('data');
         $this->api($token, 'DELETE', "recipes/{$recipeId}")->assertNoContent();
 
         $kept = $this->api($token, 'GET', "runs/{$run['id']}")->assertOk()->json('data');
+        $this->assertSame([$before['steps'], $before['decisions'], $before['interpretation'], $before['totals']], [$kept['steps'], $kept['decisions'], $kept['interpretation'], $kept['totals']], 'deleting the recipe changes nothing the run recorded');
         $this->assertNull($kept['recipe_id']);
         $this->assertSame('Refeições de setembro por município', $kept['recipe']['name']);
         $this->assertSame([true, true], [$kept['recipe_deleted'], $kept['recipe_changed_since']], 'a run whose recipe was deleted no longer reads as current');

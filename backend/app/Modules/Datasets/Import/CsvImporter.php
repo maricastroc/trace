@@ -5,7 +5,7 @@ namespace App\Modules\Datasets\Import;
 use App\Modules\Datasets\Dataset;
 use App\Modules\Datasets\DatasetVersion;
 use App\Modules\Support\Identifier;
-use App\Modules\Support\UploadLimit;
+use App\Modules\Support\MemoryBudget;
 use App\Modules\Workspaces\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -17,7 +17,7 @@ final class CsvImporter
 
     public function preview(string $path, string $filename): array
     {
-        self::allowMemoryForParsing();
+        MemoryBudget::atLeast(512);
         $parsed = CsvReader::fromConfig()->readFile($path);
         $previewRows = array_slice($parsed->records, 0, (int) config('trace.limits.preview_rows'));
 
@@ -46,7 +46,7 @@ final class CsvImporter
         ?Dataset $dataset = null,
         array $attributes = [],
     ): DatasetVersion {
-        self::allowMemoryForParsing();
+        MemoryBudget::atLeast(512);
         $raw = (string) file_get_contents($path);
         $parsed = CsvReader::fromConfig()->readFile($path);
 
@@ -127,14 +127,6 @@ final class CsvImporter
 
             return $version->load('columns', 'dataset');
         });
-    }
-
-    private static function allowMemoryForParsing(): void
-    {
-        $current = (string) ini_get('memory_limit');
-        if ($current !== '-1' && UploadLimit::bytes($current) < 512 * 1024 ** 2) {
-            ini_set('memory_limit', '512M');
-        }
     }
 
     private function createDataset(Workspace $workspace, string $filename, array $attributes): Dataset

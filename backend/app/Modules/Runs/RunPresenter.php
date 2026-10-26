@@ -40,6 +40,7 @@ final class RunPresenter
             'decisions' => $decisions,
             'decisions_key' => Decisions::key($decisions),
             'decision_changes' => $decisionChanges,
+            'interpretation' => Interpretation::of($run),
             'inputs' => array_map(fn (array $input) => $input + [
                 'latest_version_number' => $latestVersions[$input['dataset_id']] ?? null,
                 'newer_version_available' => isset($latestVersions[$input['dataset_id']]) && $latestVersions[$input['dataset_id']] > $input['version_number'],

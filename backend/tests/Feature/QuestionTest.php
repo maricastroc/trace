@@ -122,6 +122,28 @@ class QuestionTest extends TestCase
             'A vigência de beneficiarios era data_cadastro → data_desligamento (fim incluído); agora é data_cadastro → data_desligamento (fim excluído).',
             'A relação beneficiarios.cozinha_id → cozinhas.id estava confirmada como N:1; agora está sugerida, sem confirmação.',
         ], array_column($old['decision_changes'], 'message'));
+
+        $recorded = 'data_cadastro ≤ 31/12/2025 e (data_desligamento vazio ou data_desligamento ≥ 01/01/2025)';
+        $this->assertTrue($old['interpretation']['recorded']);
+        $this->assertSame($recorded, $old['interpretation']['criteria'][0]['rule'], 'the old run keeps the rule it was read with');
+        $this->assertSame($run['interpretation'], $old['interpretation']);
+        $this->assertSame(array_column($run['steps'], 'plain'), array_column($old['steps'], 'plain'));
+        $current = collect($this->api($token, 'POST', 'questions/readings', ['question' => array_replace_recursive($question, ['period' => ['reading' => null]])])->json('data.readings'))->firstWhere('reading', 'active_any');
+        $this->assertSame('data_cadastro ≤ 31/12/2025 e (data_desligamento vazio ou data_desligamento > 01/01/2025)', $current['criteria']['rule'], 'the current rule is shown apart, not over the old one');
+    }
+
+    public function test_an_old_run_shows_the_step_text_it_recorded_instead_of_regenerating_it(): void
+    {
+        [$token, $datasets, $kitchens] = $this->cadastro();
+        [, $run] = $this->trace($token, $this->beneficiariesQuestion($datasets, $kitchens, 'started'));
+
+        $snapshot = json_decode(DB::table('runs')->where('id', $run['id'])->value('recipe_snapshot'), true);
+        $snapshot['steps'][0]['plain']['headline'] = 'Texto gravado na época';
+        DB::table('runs')->where('id', $run['id'])->update(['recipe_snapshot' => json_encode($snapshot)]);
+
+        $reopened = $this->api($token, 'GET', "runs/{$run['id']}")->assertOk()->json('data');
+        $this->assertSame('Texto gravado na época', $reopened['steps'][0]['plain']['headline']);
+        $this->assertSame($run['totals'], $reopened['totals']);
     }
 
     public function test_a_single_kitchen_is_filtered_through_the_relation_and_matches_an_independent_count(): void

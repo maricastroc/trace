@@ -22,29 +22,54 @@ final class RelationshipDiscovery
 
     public function discover(Workspace $workspace): Collection
     {
+        return $this->search($workspace, null, null)['relationships'];
+    }
+
+    /**
+     * @return array{relationships: Collection<int, Relationship>, complete: bool, evaluated: int, total: int}
+     */
+    public function search(Workspace $workspace, ?string $focusId, ?float $budgetSeconds): array
+    {
         $datasets = $workspace->datasets()->with('latestVersion.columns', 'latestVersion.dataset')->get()
             ->filter(fn (Dataset $dataset) => $dataset->latestVersion !== null)
             ->values();
 
-        $candidates = [];
-
+        $pairs = [];
         foreach ($datasets as $fromDataset) {
             foreach ($datasets as $toDataset) {
                 if ($fromDataset->id === $toDataset->id) {
                     continue;
                 }
-
-                foreach ($this->pairs($fromDataset->latestVersion, $toDataset->latestVersion) as $candidate) {
-                    $candidates[] = $candidate;
+                if ($focusId !== null && $fromDataset->id !== $focusId && $toDataset->id !== $focusId) {
+                    continue;
                 }
+                $pairs[] = [$fromDataset, $toDataset];
             }
+        }
+
+        $deadline = $budgetSeconds === null ? null : hrtime(true) + (int) ($budgetSeconds * 1e9);
+        $candidates = [];
+        $evaluated = 0;
+
+        foreach ($pairs as [$fromDataset, $toDataset]) {
+            if ($deadline !== null && hrtime(true) > $deadline) {
+                break;
+            }
+
+            foreach ($this->pairs($fromDataset->latestVersion, $toDataset->latestVersion) as $candidate) {
+                $candidates[] = $candidate;
+            }
+            $evaluated++;
         }
 
         $kept = $this->dropMirrors($candidates);
 
-        return collect($kept)->map(fn (array $candidate) => $this->upsert($workspace, $candidate))
-            ->sortByDesc('score')
-            ->values();
+        return [
+            'relationships' => collect($kept)->map(fn (array $candidate) => $this->upsert($workspace, $candidate))->sortByDesc('score')->values(),
+            'complete' => $evaluated === count($pairs),
+            'evaluated' => $evaluated,
+            'total' => count($pairs),
+        ];
     }
 
     private function pairs(DatasetVersion $fromVersion, DatasetVersion $toVersion): array

@@ -36,5 +36,10 @@ final class WorkspacePruner
             $workspace->delete();
         });
         Storage::disk('local')->delete($paths);
+        foreach (array_unique(array_map('dirname', $paths)) as $directory) {
+            if (Storage::disk('local')->allFiles($directory) === []) {
+                Storage::disk('local')->deleteDirectory($directory);
+            }
+        }
     }
 }

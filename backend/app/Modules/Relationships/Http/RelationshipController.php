@@ -30,13 +30,20 @@ final class RelationshipController
         return response()->json(['data' => $relationships->map(fn (Relationship $r) => RelationshipPresenter::present($r))->all()]);
     }
 
-    public function discover(Workspace $workspace, RelationshipDiscovery $discovery): JsonResponse
+    public function discover(Request $request, Workspace $workspace, RelationshipDiscovery $discovery): JsonResponse
     {
-        $found = $discovery->discover($workspace);
+        $focus = is_string($request->input('dataset_id')) ? $workspace->datasets()->findOrFail($request->input('dataset_id'))->id : null;
+        $result = $discovery->search($workspace, $focus, (float) config('trace.limits.discovery_seconds'));
 
         return response()->json([
-            'data' => $found->map(fn (Relationship $r) => RelationshipPresenter::present($r))->all(),
-            'meta' => ['evaluated_at' => now()->toIso8601String(), 'found' => $found->count()],
+            'data' => $result['relationships']->map(fn (Relationship $r) => RelationshipPresenter::present($r))->all(),
+            'meta' => [
+                'evaluated_at' => now()->toIso8601String(),
+                'found' => $result['relationships']->count(),
+                'complete' => $result['complete'],
+                'evaluated_pairs' => $result['evaluated'],
+                'total_pairs' => $result['total'],
+            ],
         ]);
     }
 

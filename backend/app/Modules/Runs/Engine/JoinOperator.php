@@ -30,6 +30,7 @@ final class JoinOperator
         ];
 
         foreach ($alive as $tuple) {
+            $context->tick($step['position']);
             $key = $context->value($tuple, $probe['input'], $probe['column']);
             $probeRow = $context->tuples->source($tuple, $probe['input']);
             $base = [

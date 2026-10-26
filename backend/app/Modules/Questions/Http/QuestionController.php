@@ -8,6 +8,7 @@ use App\Modules\Questions\ValidityCriteria;
 use App\Modules\Recipes\Recipe;
 use App\Modules\Recipes\RecipeCompiler;
 use App\Modules\Recipes\RecipePreview;
+use App\Modules\Runs\Engine\ExecutionBudget;
 use App\Modules\Runs\Engine\ValidityRule;
 use App\Modules\Runs\RunLauncher;
 use App\Modules\Runs\RunPresenter;
@@ -56,11 +57,12 @@ final class QuestionController
 
         $validity = $workspace->datasets()->findOrFail($translated->baseDatasetId)->validity();
         $readings = [];
+        $budget = ExecutionBudget::forPreview();
 
         foreach (ValidityRule::READINGS as $reading) {
             $raw['period']['reading'] = $reading;
             $option = $this->translated($workspace, $raw);
-            $preview = $this->preview->preview($workspace, $option->baseDatasetId, $option->steps);
+            $preview = $this->preview->preview($workspace, $option->baseDatasetId, $option->steps, null, $budget);
 
             $readings[] = [
                 'reading' => $reading,

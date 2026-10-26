@@ -42,7 +42,7 @@ final class RunLauncher
                 'workspace_id' => $workspace->id,
                 'recipe_id' => $recipe?->id,
                 'recipe_revision' => $recipe?->revision ?? 1,
-                'recipe_snapshot' => $compiled->snapshot($recipe),
+                'recipe_snapshot' => $compiled->snapshot($recipe) + ['interpretation' => Interpretation::record($compiled->steps)],
                 'status' => Run::QUEUED,
                 'queued_at' => now(),
             ]);

@@ -3,6 +3,7 @@
 namespace App\Modules\Datasets\Http;
 
 use App\Modules\Datasets\Dataset;
+use App\Modules\Datasets\DatasetEraser;
 use App\Modules\Datasets\DatasetPresenter;
 use App\Modules\Datasets\Import\CsvImporter;
 use App\Modules\Support\DomainError;
@@ -11,8 +12,8 @@ use App\Modules\Workspaces\Workspace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 final class DatasetController
 {
@@ -112,23 +113,47 @@ final class DatasetController
         return response()->json(['data' => DatasetPresenter::detail($model)]);
     }
 
-    public function destroy(Workspace $workspace, string $dataset): JsonResponse
+    public function dependents(Workspace $workspace, string $dataset, DatasetEraser $eraser): JsonResponse
     {
         $model = $workspace->datasets()->with('versions')->findOrFail($dataset);
 
-        if (DB::table('run_inputs')->where('dataset_id', $model->id)->exists()) {
-            throw new DomainError('dataset.in_use', 'Este conjunto foi usado em execuções e não pode ser removido, para preservar a rastreabilidade.', 409);
+        return response()->json(['data' => $eraser->dependents($workspace, $model)]);
+    }
+
+    public function erasures(Workspace $workspace): JsonResponse
+    {
+        $rows = DB::table('dataset_erasures')->where('workspace_id', $workspace->id)->orderByDesc('erased_at')->get();
+
+        return response()->json(['data' => $rows->map(fn (object $row) => [
+            'dataset_key' => $row->dataset_key,
+            'dataset_name' => $row->dataset_name,
+            'versions' => json_decode($row->versions, true),
+            'removed' => json_decode($row->removed, true),
+            'erased_at' => Carbon::parse($row->erased_at)->toIso8601String(),
+        ])->all()]);
+    }
+
+    public function destroy(Request $request, Workspace $workspace, string $dataset, DatasetEraser $eraser): JsonResponse
+    {
+        $model = $workspace->datasets()->with('versions')->findOrFail($dataset);
+
+        if (! $eraser->hasHistory($workspace, $model)) {
+            $eraser->erase($workspace, $model);
+
+            return response()->json(null, 204);
         }
 
-        if ($workspace->recipes()->where('base_dataset_id', $model->id)->exists()) {
-            throw new DomainError('dataset.in_recipe', 'Este conjunto é o ponto de partida de uma receita. Remova a receita antes.', 409);
+        $dependents = $eraser->dependents($workspace, $model);
+
+        if (! $request->boolean('with_history')) {
+            throw new DomainError('dataset.in_use', 'Esta tabela foi usada em execuções, perguntas ou comparações. Para excluí-la, é preciso excluir também esse histórico.', 409, ['dependents' => $dependents]);
         }
 
-        $paths = $model->versions->pluck('source_path')->all();
-        $model->delete();
-        Storage::disk('local')->delete($paths);
+        if ($request->input('confirm') !== $model->key) {
+            throw new DomainError('dataset.confirmation_required', "Para excluir {$model->key} com o histórico que depende dela, digite o nome da tabela para confirmar.", 422, ['dependents' => $dependents]);
+        }
 
-        return response()->json(null, 204);
+        return response()->json(['data' => $eraser->erase($workspace, $model)]);
     }
 
     private function validatedFile(Request $request): UploadedFile

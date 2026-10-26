@@ -22,6 +22,7 @@ final class AggregateOperator
         }
 
         foreach ($alive as $tuple) {
+            $context->tick($step['position']);
             $keyValues = array_map(
                 fn (array $group) => $context->value($tuple, $group['input'], $group['column']),
                 $step['group_by'],

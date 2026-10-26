@@ -43,7 +43,7 @@ final class RunLineage
                     'probe' => $step['probe'],
                     'lookup' => $step['lookup'],
                 ] : null,
-                'plain' => $plain[$step['position']],
+                'plain' => $step['plain'] ?? $plain[$step['position']],
             ];
         }, $run->steps());
     }

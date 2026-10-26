@@ -16,6 +16,7 @@ final class FilterOperator
         $byCondition = array_fill(0, count($step['conditions']), 0);
 
         foreach ($alive as $tuple) {
+            $context->tick($step['position']);
             $failure = null;
 
             foreach ($step['conditions'] as $index => $condition) {

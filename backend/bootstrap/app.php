@@ -2,6 +2,7 @@
 
 use App\Modules\Support\DomainError;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -43,6 +44,20 @@ return Application::configure(basePath: dirname(__DIR__))
             };
 
             return response()->json(['message' => $message, 'code' => $code, 'details' => new stdClass], $status, $e->getHeaders());
+        });
+
+        $exceptions->render(function (QueryException $e, Request $request) {
+            if (! $request->is('api/*') || $e->getCode() !== '57014') {
+                return null;
+            }
+
+            $seconds = (int) config('trace.limits.statement_seconds');
+
+            return response()->json([
+                'message' => "A consulta ao banco passou de {$seconds} s e foi interrompida. Tente um período ou um recorte menor; rastrear calcula em segundo plano, sem esse limite.",
+                'code' => 'request.timeout',
+                'details' => new stdClass,
+            ], 503);
         });
 
         $exceptions->render(function (Throwable $e, Request $request) {

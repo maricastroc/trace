@@ -2,8 +2,10 @@
 
 namespace App\Modules\Recipes;
 
+use App\Modules\Runs\Engine\ExecutionBudget;
 use App\Modules\Runs\Engine\ExecutionFailed;
 use App\Modules\Runs\Engine\Pipeline;
+use App\Modules\Support\MemoryBudget;
 use App\Modules\Workspaces\Workspace;
 
 final class RecipePreview
@@ -16,8 +18,9 @@ final class RecipePreview
     /**
      * @return array<string, mixed>
      */
-    public function preview(Workspace $workspace, mixed $baseDatasetId, mixed $steps, ?Recipe $recipe = null): array
+    public function preview(Workspace $workspace, mixed $baseDatasetId, mixed $steps, ?Recipe $recipe = null, ?ExecutionBudget $budget = null): array
     {
+        MemoryBudget::atLeast(512);
         $compiled = $this->compiler->compile($workspace, $baseDatasetId, $steps);
         $blockers = $compiled->blockers();
         $stopping = array_values(array_filter($blockers, fn (array $issue) => ! $this->allowsPreview($issue)));
@@ -43,6 +46,8 @@ final class RecipePreview
             'steps' => [],
             'columns' => null,
             'results' => [],
+            'results_total' => 0,
+            'results_truncated' => false,
             'totals' => null,
             'tuple_count' => null,
             'computed_at' => now()->toIso8601String(),
@@ -57,7 +62,7 @@ final class RecipePreview
         }
 
         try {
-            $outcome = $this->pipeline->execute($compiled->snapshot($recipe));
+            $outcome = $this->pipeline->execute($compiled->snapshot($recipe), (int) config('trace.limits.preview_tuples'), $budget ?? ExecutionBudget::forPreview());
         } catch (ExecutionFailed $failure) {
             return ['reason' => 'failed', 'error' => $failure->toArray()] + $payload;
         }
@@ -77,7 +82,9 @@ final class RecipePreview
                 'stats' => $step['stats'],
             ], $outcome->steps),
             'columns' => $outcome->columns,
-            'results' => $outcome->results,
+            'results' => array_slice($outcome->results, 0, $limit = (int) config('trace.limits.preview_results')),
+            'results_total' => count($outcome->results),
+            'results_truncated' => count($outcome->results) > $limit,
             'totals' => $outcome->totals,
             'tuple_count' => $outcome->tuples->count(),
         ] + $payload;
