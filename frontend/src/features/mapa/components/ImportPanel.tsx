@@ -12,7 +12,7 @@ import { TYPE_WORDS } from "./FieldIcon";
 type Props = {
   model: MapModel;
   target: string | null;
-  onDone: (key: string) => void;
+  onDone: (key: string, id: string) => void;
   onCancel: () => void;
 };
 
@@ -95,7 +95,7 @@ export function ImportPanel({ model, target, onDone, onCancel }: Props) {
         onSuccess: (response) => {
           const key = response.data.key;
           toast(mode === "version" ? `Nova versão de ${key}: ${plural(read.row_count, "linha", "linhas")}. Procurando relações…` : `${key} importada: ${plural(read.row_count, "linha", "linhas")}. Procurando relações…`);
-          onDone(key);
+          onDone(key, response.data.id);
         },
       },
     );

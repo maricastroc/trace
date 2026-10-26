@@ -346,6 +346,27 @@ export type Decision =
 
 export type DecisionChange = { kind: Decision["kind"]; position: number | null; message: string };
 
+export type RecordedCriteria = {
+  position: number;
+  alias: string;
+  reading: ValidityReading;
+  from: string;
+  to: string;
+  start_column: string;
+  end_column: string | null;
+  end_inclusive: boolean;
+  enters: string;
+  leaves: string;
+  rule: string;
+  undetermined: string;
+};
+
+export type DatasetDependents = { versions: number; rows: number; files: number; relationships: number; recipes: number; runs: number; comparisons: number; comparison_runs: number };
+
+export type DatasetErasure = { dataset: { key: string; name: string }; removed: DatasetDependents; erased_at: string };
+
+export type RunInterpretation = { recorded: boolean; version: number | null; recorded_at: string | null; criteria: RecordedCriteria[] };
+
 export type RunInput = RecipeInput & {
   row_count: number;
   latest_version_number: number | null;
@@ -377,6 +398,7 @@ export type RunDetail = RunSummary & {
   decisions: Decision[];
   decisions_key: string;
   decision_changes: DecisionChange[];
+  interpretation: RunInterpretation;
   inputs: RunInput[];
   steps: RunStep[];
   output_columns: OutputColumn[] | null;
@@ -588,6 +610,8 @@ export type Preview = {
   steps: PreviewStep[];
   columns: OutputColumn[] | null;
   results: ResultRow[];
+  results_total?: number;
+  results_truncated?: boolean;
   totals: RunTotals | null;
   tuple_count: number | null;
   computed_at: string;

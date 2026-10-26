@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { formatCount, formatPercent, plural } from "@/lib/format";
-import { useDeleteDataset, useRowsWhere, useVersionRows } from "@/lib/queries";
+import { useDatasetDependents, useDeleteDataset, useRowsWhere, useVersionRows } from "@/lib/queries";
 import { useToast } from "@/components/ui/Toast";
 import type { Relationship } from "@/lib/types";
 import { StatePill } from "@/components/ui/StatePill";
@@ -65,8 +65,11 @@ type TableProps = {
 
 function RemoveTable({ table, relations, onRemoved }: { table: MapTable; relations: number; onRemoved: () => void }) {
   const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState("");
+  const dependents = useDatasetDependents(confirming ? table.id : null);
   const remove = useDeleteDataset();
   const toast = useToast();
+  const inputId = useId();
   if (!confirming) {
     return (
       <button type="button" className="btn btn-quiet" onClick={() => setConfirming(true)}>
@@ -74,29 +77,78 @@ function RemoveTable({ table, relations, onRemoved }: { table: MapTable; relatio
       </button>
     );
   }
+  const found = dependents.data?.data ?? null;
+  const history = found ? found.runs + found.recipes + found.comparisons > 0 : false;
+  const parts = found
+    ? [
+        found.runs > 0 ? plural(found.runs, "execução rastreada", "execuções rastreadas") : null,
+        found.recipes > 0 ? plural(found.recipes, "pergunta ou receita", "perguntas ou receitas") : null,
+        found.comparisons > 0 ? plural(found.comparisons, "comparação", "comparações") : null,
+      ].filter(Boolean)
+    : [];
+  const done = (report: string) => {
+    toast(report);
+    onRemoved();
+  };
   return (
     <div className="fix-box" role="group" aria-label={`Confirmar a remoção de ${table.key}`}>
-      <p className="m-0 text-[15px] leading-relaxed">
-        Remover <b className="font-mono">{table.key}</b> com todas as versões{relations > 0 ? ` e ${plural(relations, "relação", "relações")}` : ""}? Não dá para desfazer.
-      </p>
-      <p className="small-note">Tabelas usadas em execuções ou que são o ponto de partida de uma receita não podem ser removidas: a linhagem depende delas.</p>
+      {!found && <p className="small-note">{dependents.isError ? dependents.error.message : "Verificando o que depende desta tabela…"}</p>}
+      {found && !history && (
+        <p className="m-0 text-[15px] leading-relaxed">
+          Remover <b className="font-mono">{table.key}</b> com {plural(found.versions, "versão", "versões")}, {plural(found.rows, "linha", "linhas")} e o arquivo importado
+          {relations > 0 ? `, além de ${plural(relations, "relação", "relações")}` : ""}? Não dá para desfazer.
+        </p>
+      )}
+      {found && history && (
+        <>
+          <p className="m-0 text-[15px] leading-relaxed">
+            <b className="font-mono">{table.key}</b> foi usada em {parts.join(", ")}. Para apagar os dados desta tabela, esse histórico também é apagado: os números, as linhas de
+            origem e as explicações dessas execuções deixam de existir.
+          </p>
+          <ul className="small-note m-0 pl-5">
+            <li>
+              Apagados: {plural(found.versions, "versão", "versões")} com {plural(found.rows, "linha", "linhas")}, o arquivo importado, {plural(found.relationships, "relação", "relações")} e o histórico acima.
+            </li>
+            <li>Fica um registro sem dados das linhas: nome da tabela, versões, quantidade de linhas, impressão digital do arquivo e data da exclusão.</li>
+            <li>Cópias feitas fora do Trace (backups do banco, arquivos baixados) não são alcançadas por esta exclusão.</li>
+          </ul>
+          <label className="grid gap-1" htmlFor={inputId}>
+            <span className="small-note">
+              Para confirmar, digite <b className="font-mono">{table.key}</b>
+            </span>
+            <input id={inputId} className="import-input" value={typed} autoComplete="off" onChange={(event) => setTyped(event.target.value)} />
+          </label>
+        </>
+      )}
       <div className="panel-actions">
         <button
           type="button"
           className="btn btn-danger"
-          disabled={remove.isPending}
+          disabled={!found || remove.isPending || (history && typed !== table.key)}
           onClick={() =>
-            remove.mutate(table.id, {
-              onSuccess: () => {
-                toast(`${table.key} removida.`);
-                onRemoved();
+            remove.mutate(
+              { id: table.id, confirm: history ? typed : undefined },
+              {
+                onSuccess: (response) =>
+                  done(
+                    response?.data
+                      ? `${table.key} apagada com ${plural(response.data.removed.runs, "execução", "execuções")} e ${plural(response.data.removed.comparisons, "comparação", "comparações")} que dependiam dela.`
+                      : `${table.key} removida.`,
+                  ),
               },
-            })
+            )
           }
         >
-          {remove.isPending ? "Removendo…" : "Remover de vez"}
+          {remove.isPending ? "Removendo…" : history ? "Apagar a tabela e o histórico" : "Remover de vez"}
         </button>
-        <button type="button" className="btn btn-quiet" onClick={() => setConfirming(false)}>
+        <button
+          type="button"
+          className="btn btn-quiet"
+          onClick={() => {
+            setConfirming(false);
+            setTyped("");
+          }}
+        >
           Cancelar
         </button>
       </div>

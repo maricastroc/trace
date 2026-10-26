@@ -44,6 +44,12 @@ function recordTitle(entry: RecordEntry) {
   return entry.values.nome ?? `${entry.table} · linha ${entry.line}`;
 }
 
+function partial(meta: { complete: boolean; evaluated_pairs: number; total_pairs: number }) {
+  return meta.complete
+    ? ""
+    : ` A busca parou no limite de tempo: ${meta.evaluated_pairs} de ${meta.total_pairs} pares de tabelas foram avaliados, e as sugestões encontradas foram mantidas.`;
+}
+
 export function MapaScreen() {
   const params = useSearchParams();
   const router = useRouter();
@@ -126,21 +132,30 @@ export function MapaScreen() {
     discover.mutate(undefined, {
       onSuccess: (response) => {
         const fresh = response.data.filter((r) => !before.has(r.id)).length;
-        toast(fresh ? `${plural(fresh, "sugestão de relação nova", "sugestões de relação novas")}.` : "Nenhuma relação nova. As decisões existentes foram mantidas.");
+        toast(
+          (fresh ? `${plural(fresh, "sugestão de relação nova", "sugestões de relação novas")}.` : "Nenhuma relação nova. As decisões existentes foram mantidas.") +
+            partial(response.meta),
+        );
       },
       onError: (error) => toast(error.message),
     });
   };
 
-  const afterImport = (key: string) => {
+  const afterImport = (key: string, id: string) => {
     openTable(key);
-    discover.mutate(undefined, {
-      onSuccess: (response) => {
-        const touching = response.data.filter((r) => r.from.dataset_key === key || r.to.dataset_key === key).length;
-        toast(touching ? `${plural(touching, "relação envolve", "relações envolvem")} ${key}. Clique numa conexão para ver a evidência.` : `Nenhuma relação encontrada para ${key}.`);
+    discover.mutate(
+      { datasetId: id },
+      {
+        onSuccess: (response) => {
+          const touching = response.data.filter((r) => r.from.dataset_key === key || r.to.dataset_key === key).length;
+          toast(
+            (touching ? `${plural(touching, "relação envolve", "relações envolvem")} ${key}. Clique numa conexão para ver a evidência.` : `Nenhuma relação encontrada para ${key}.`) +
+              partial(response.meta),
+          );
+        },
+        onError: (error) => toast(error.message),
       },
-      onError: (error) => toast(error.message),
-    });
+    );
   };
 
   const failure = datasets.error ?? relationships.error ?? versions.error;

@@ -13,7 +13,9 @@ import type {
   ComparisonRunDetail,
   ComparisonSpec,
   Contributor,
+  DatasetDependents,
   DatasetDetail,
+  DatasetErasure,
   DatasetSummary,
   DatasetVersion,
   Diagnostic,
@@ -313,7 +315,12 @@ export function useDiscoverRelationships() {
   const token = useToken();
   const invalidate = useRelationshipInvalidation();
   return useMutation({
-    mutationFn: () => request<{ data: Relationship[]; meta: { found: number } }>("/relationships/discover", { method: "POST", token }),
+    mutationFn: (focus: { datasetId: string } | void) =>
+      request<{ data: Relationship[]; meta: { found: number; complete: boolean; evaluated_pairs: number; total_pairs: number } }>("/relationships/discover", {
+        method: "POST",
+        token,
+        body: focus ? { dataset_id: focus.datasetId } : undefined,
+      }),
     onSuccess: invalidate,
   });
 }
@@ -402,13 +409,18 @@ export function useImportFile() {
   });
 }
 
+export function useDatasetDependents(datasetId: string | null) {
+  return useApi<{ data: DatasetDependents }>(["dataset-dependents", datasetId], datasetId ? `/datasets/${datasetId}/dependents` : null);
+}
+
 export function useDeleteDataset() {
   const token = useToken();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (datasetId: string) => request<void>(`/datasets/${datasetId}`, { method: "DELETE", token }),
+    mutationFn: ({ id, confirm }: { id: string; confirm?: string }) =>
+      request<{ data: DatasetErasure } | undefined>(`/datasets/${id}`, { method: "DELETE", token, body: confirm ? { with_history: true, confirm } : undefined }),
     onSuccess: () => {
-      for (const key of ["datasets", "relationships", "relationship", "recipes", "question-preview", "question-readings"]) {
+      for (const key of ["datasets", "relationships", "relationship", "recipes", "runs", "run", "comparisons", "comparison-runs", "question-preview", "question-readings", "comparison-preview"]) {
         client.invalidateQueries({ queryKey: [key] });
       }
     },

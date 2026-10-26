@@ -42,6 +42,7 @@ function run(steps: RunStep[], totals: RunDetail["totals"], groupKeys: { alias: 
     decisions: [],
     decisions_key: "",
     decision_changes: [],
+    interpretation: { recorded: true, version: 1, recorded_at: null, criteria: [] },
     inputs: [
       {
         position: 0,

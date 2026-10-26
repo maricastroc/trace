@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTrail } from "@/components/shell/Trail";
+import { browserStorage, readState, stashState } from "@/lib/address-state";
+import { formatCount } from "@/lib/format";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "@/components/ui/ScreenStates";
 import { useDatasets, useQuestionPreview, useRecipes, useRelationships, useResults, useRowsWhere, useRun, useTraceQuestion, useVersions } from "@/lib/queries";
 import type { Preview, QuestionSpec, RunDetail, RunTotals } from "@/lib/types";
@@ -110,7 +112,7 @@ function differences(run: RunDetail, preview: Preview) {
 }
 
 function initialQuestion(catalog: Catalog, params: URLSearchParams) {
-  const fromUrl = decodeQuestion(params.get("q"));
+  const fromUrl = decodeQuestion(readState(browserStorage(), "q", params.get("q")));
   if (fromUrl && fitsCatalog(catalog, fromUrl)) return fromUrl;
   const table = params.get("tabela");
   return starterQuestion(catalog, table ? catalog.tables.find((candidate) => candidate.key === table)?.id : null);
@@ -122,11 +124,12 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
   const [question, setQuestionState] = useState<QuestionSpec>(() => initialQuestion(catalog, params)!);
   const [invOpen, setInvOpen] = useState(false);
   const [traces, setTraces] = useState<Record<string, string>>({});
+  const [recordedRun, setRecordedRun] = useState<string | null>(null);
 
   const setQuestion = useCallback(
     (next: QuestionSpec) => {
       setQuestionState(next);
-      router.replace(`/perguntas?q=${encodeURIComponent(encodeQuestion(next))}`, { scroll: false });
+      router.replace(`/perguntas?q=${encodeURIComponent(stashState(browserStorage(), "q", encodeQuestion(next)))}`, { scroll: false });
     },
     [router],
   );
@@ -158,7 +161,9 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
   const runDetail = runQuery.data?.data ?? null;
   const results = useResults(runDetail?.status === "succeeded" ? runDetail.id : null);
   const traced = runDetail?.status === "succeeded" && results.data && preview?.computed && matches(runDetail, preview) ? runDetail : null;
-  const earlier = runDetail?.status === "succeeded" && preview && !traced ? { run: runDetail, reasons: differences(runDetail, preview) } : null;
+  const earlier = runDetail?.status === "succeeded" && results.data && preview && !traced ? { run: runDetail, reasons: differences(runDetail, preview) } : null;
+  const historical = earlier && recordedRun === earlier.run.id ? earlier.run : null;
+  const shown = traced ?? historical;
   const tracing = runDetail && runDetail.status !== "succeeded" ? runDetail : null;
   const trace = useTraceQuestion();
   const client = useQueryClient();
@@ -167,7 +172,7 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
     if (finished) client.invalidateQueries({ queryKey: ["recipes"] });
   }, [finished, client]);
 
-  const outcome: Outcome | null = traced && results.data ? runOutcome(traced, results.data.data) : preview?.computed ? previewOutcome(preview) : null;
+  const outcome: Outcome | null = shown && results.data ? runOutcome(shown, results.data.data) : preview?.computed ? previewOutcome(preview) : null;
   const notes = outcome ? answerNotes(question, outcome, dimension?.noun ?? null) : [];
   const groups = outcome && question.dimension?.value === null ? groupsOf(outcome) : [];
 
@@ -205,6 +210,14 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
   return (
     <div className="perguntas">
       <QuestionHead catalog={catalog} question={question} valueLabel={valueLabel} busy={answer.isFetching} onChange={setQuestion} />
+      {!question.period && dateColumns(base).length >= 2 && (
+        <p className="small-note q-period-hint">
+          {base.key} tem {dateColumns(base).length} colunas de data ({dateColumns(base)
+            .map((column) => column.key)
+            .join(", ")}
+          ). O Trace não escolhe qual delas marca o período: para recortar por período, escolha a data no termo “em qualquer data”.
+        </p>
+      )}
 
       {needsReading && period?.kind === "validity" && (
         <Clarification
@@ -224,8 +237,10 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
         <Answer
           outcome={outcome}
           preview={preview}
-          run={traced}
+          run={shown}
           earlier={earlier}
+          historical={historical !== null}
+          onRecorded={(open) => setRecordedRun(open && earlier ? earlier.run.id : null)}
           tracing={tracing}
           unit={unit}
           context={context}
@@ -240,6 +255,12 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
         />
       )}
 
+      {!needsReading && !shown && preview?.results_truncated && (
+        <p className="small-note">
+          A prévia mostra {formatCount(preview.results.length)} de {formatCount(preview.results_total ?? 0)} grupos, na ordem das chaves. O total considera todos; rastreie para
+          ver cada grupo.
+        </p>
+      )}
       {!needsReading && outcome && groups.length > 0 && dimension && outcome.totals && (
         <GroupBars
           groups={groups}
@@ -272,7 +293,8 @@ function QuestionWorkspace({ catalog }: { catalog: Catalog }) {
           outcome={outcome}
           notes={notes}
           groups={groups}
-          run={traced}
+          run={shown}
+          historical={historical !== null}
           tracing={tracing}
           traceError={trace.error}
           tracePending={trace.isPending}

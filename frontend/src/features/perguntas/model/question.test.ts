@@ -125,8 +125,8 @@ describe("starter question and sentence", () => {
     expect(plainText(sentence(catalog, question))).toBe("Em atendimentos com data em 2025, quantos registros por cozinha via atendimentos.cozinha_id?");
 
     const undeclared = starterQuestion(catalog, "ds-beneficiarios")!;
-    expect(undeclared.period).toEqual({ kind: "date", column: "data_cadastro", from: "2025-01-01", to: "2025-12-31" });
-    expect(plainText(sentence(catalog, undeclared))).toBe("Em beneficiários com data_cadastro em 2025, quantos beneficiários diferentes por cozinha?");
+    expect(undeclared.period).toBeNull();
+    expect(plainText(sentence(catalog, undeclared))).toBe("Em beneficiários, em qualquer data, quantos beneficiários diferentes por cozinha?");
     const people = { ...undeclared, measure: { function: "count" as const } };
     const kitchen = { ...people, dimension: { ...people.dimension!, value: "0101" }, period: { kind: "validity" as const, reading: "active_at_end" as const, from: "2025-01-01", to: "2025-12-31" } };
     expect(plainText(sentence(catalog, kitchen, "Cozinha Esperança"))).toBe("Em beneficiários que estavam vigentes no último dia de 2025, quantas linhas de Cozinha Esperança?");

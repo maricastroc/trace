@@ -56,6 +56,7 @@ function run(overrides: Partial<RunDetail> = {}): RunDetail {
     decisions: [],
     decisions_key: "",
     decision_changes: [],
+    interpretation: { recorded: true, version: 1, recorded_at: null, criteria: [] },
     inputs: [input(0, "refeicoes", "v-ref-1"), input(1, "cozinhas", "v-coz-1")],
     steps: [
       step(1, "filter"),

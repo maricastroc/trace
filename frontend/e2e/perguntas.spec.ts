@@ -92,7 +92,10 @@ test("a period question waits for the declaration, shows three readings and answ
   const distinct = (list: typeof people) => new Set(list.map((r) => r.id)).size;
 
   await page.goto("/perguntas?tabela=beneficiarios");
-  await expect(sentence(page)).toHaveText("Em beneficiários com data_cadastro em 2025, quantos beneficiários diferentes por cozinha?");
+  await expect(sentence(page)).toHaveText("Em beneficiários, em qualquer data, quantos beneficiários diferentes por cozinha?");
+  await expect(page.locator(".q-period-hint")).toHaveText(
+    "beneficiarios tem 2 colunas de data (data_cadastro, data_desligamento). O Trace não escolhe qual delas marca o período: para recortar por período, escolha a data no termo “em qualquer data”.",
+  );
   await token(page, "a data usada").click();
   await page.getByRole("option", { name: /^vigentes em/ }).click();
   await expect(sentence(page)).toHaveText("Em beneficiários vigentes em 2025, quantos beneficiários diferentes por cozinha?");
@@ -137,6 +140,19 @@ test("a period question waits for the declaration, shows three readings and answ
   await expect(earlier).toContainText("A relação beneficiarios.cozinha_id → cozinhas.id estava confirmada como N:1; agora está sugerida, sem confirmação.");
   await expect(page.getByText("prévia", { exact: true })).toBeVisible();
   await expect(page.getByText("Para rastrear este resultado, falta 1 decisão.")).toBeVisible();
+
+  await earlier.getByRole("button", { name: "Abrir a execução gravada" }).click();
+  await expect(page.locator(".ans-status")).toContainText(/Execução gravada .*, aberta como foi registrada\./);
+  await expect(page.getByRole("img", { name: `${count(distinct(esperanca))} beneficiários diferentes` })).toBeVisible();
+  await expect(page.getByText("Para rastrear este resultado, falta 1 decisão.")).toHaveCount(0);
+  await page.getByRole("button", { name: "Investigar a resposta" }).click();
+  await page.locator("#q-inv").getByRole("tab", { name: "Critérios e relações" }).click();
+  const recorded = page.locator("#q-inv").getByRole("list", { name: "Relações gravadas na execução" });
+  await expect(recorded).toContainText("beneficiarios.cozinha_id → cozinhas.id");
+  await expect(recorded).toContainText("confirmada");
+  await expect(page.locator("#q-inv")).toContainText("data_cadastro ≤ 31/12/2025 e (data_desligamento vazio ou data_desligamento ≥ 31/12/2025)");
+  await page.getByRole("button", { name: "Voltar ao cálculo atual" }).click();
+  await expect(page.getByText("prévia", { exact: true })).toBeVisible();
 
   await api.clearValidity("beneficiarios");
   await api.removeQuestions();

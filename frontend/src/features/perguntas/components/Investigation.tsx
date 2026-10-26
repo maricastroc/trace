@@ -28,6 +28,7 @@ type Props = {
   notes: Note[];
   groups: Group[];
   run: RunDetail | null;
+  historical: boolean;
   tracing: RunSummary | RunDetail | null;
   traceError: Error | null;
   tracePending: boolean;
@@ -36,7 +37,7 @@ type Props = {
 };
 
 export function Investigation(props: Props) {
-  const { catalog, base, question, text, preview, outcome, notes, run, onClose } = props;
+  const { catalog, base, question, text, preview, outcome, notes, run, historical, onClose } = props;
   const [tab, setTab] = useState<Tab>("steps");
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -75,7 +76,7 @@ export function Investigation(props: Props) {
       </div>
       <div className="inv-panel" role="tabpanel" id="q-inv-panel" aria-labelledby={`qtab-${tab}`}>
         {tab === "steps" && <StepsTab {...props} />}
-        {tab === "criteria" && <Criteria catalog={catalog} base={base} question={question} notes={notes} />}
+        {tab === "criteria" && <Criteria catalog={catalog} base={base} question={question} notes={notes} run={run} historical={historical} />}
         {tab === "spec" && <Spec catalog={catalog} base={base} question={question} text={text} preview={preview} run={run} outcome={outcome} />}
       </div>
     </section>

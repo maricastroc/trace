@@ -48,6 +48,8 @@ type Props = {
   preview: Preview | null;
   run: RunDetail | null;
   earlier: { run: RunDetail; reasons: string[] } | null;
+  historical: boolean;
+  onRecorded: (open: boolean) => void;
   tracing: RunSummary | RunDetail | null;
   unit: string;
   context: string;
@@ -58,14 +60,24 @@ type Props = {
   remedy: { label: string; apply: () => void } | null;
 };
 
-function Earlier({ earlier, computed }: { earlier: NonNullable<Props["earlier"]>; computed: boolean }) {
+function Earlier({
+  earlier,
+  computed,
+  historical,
+  onRecorded,
+}: {
+  earlier: NonNullable<Props["earlier"]>;
+  computed: boolean;
+  historical: boolean;
+  onRecorded: (open: boolean) => void;
+}) {
   return (
     <div className="ans-earlier" role="note">
       <p>
         <b>
           Execução rastreada {shortId(earlier.run.id)}, {formatWhen(earlier.run.finished_at)}
         </b>
-        : não corresponde ao estado atual.
+        {historical ? ": desde então, o estado mudou." : ": não corresponde ao estado atual."}
       </p>
       <ul>
         {earlier.reasons.map((reason) => (
@@ -73,19 +85,24 @@ function Earlier({ earlier, computed }: { earlier: NonNullable<Props["earlier"]>
         ))}
       </ul>
       <p>
-        {computed
-          ? "Ela continua gravada como estava. O número ao lado é uma prévia com os dados e as decisões de agora; rastreie de novo para gravá-lo."
-          : "Ela continua gravada como estava. Com os dados e as decisões de agora, a pergunta ainda não pode ser calculada."}
+        {historical
+          ? "O número ao lado é o resultado gravado, com as versões, as decisões e os critérios daquele momento. Nada nele foi recalculado."
+          : computed
+            ? "Ela continua gravada como estava. O número ao lado é uma prévia com os dados e as decisões de agora; rastreie de novo para gravá-lo."
+            : "Ela continua gravada como estava. Com os dados e as decisões de agora, a pergunta ainda não pode ser calculada."}
       </p>
+      <button type="button" className="btn btn-quiet justify-self-start" onClick={() => onRecorded(!historical)}>
+        {historical ? "Voltar ao cálculo atual" : "Abrir a execução gravada"}
+      </button>
     </div>
   );
 }
 
-export function Answer({ outcome, preview, run, earlier, tracing, unit, context, stale, notes, invOpen, onInvestigate, remedy }: Props) {
+export function Answer({ outcome, preview, run, earlier, historical, onRecorded, tracing, unit, context, stale, notes, invOpen, onInvestigate, remedy }: Props) {
   const [decisions, setDecisions] = useState(false);
   const value = outcome ? answerValue(outcome) : null;
 
-  if (preview && !preview.computed) {
+  if (preview && !preview.computed && !historical) {
     return (
       <section className="q-answer" id="q-answer" tabIndex={-1} aria-label="Resposta" aria-busy={stale}>
         <div className="insuff warn" style={{ gridColumn: "1 / -1" }}>
@@ -96,7 +113,7 @@ export function Answer({ outcome, preview, run, earlier, tracing, unit, context,
               : "Uma decisão pendente muda o resultado. O Trace não calcula com suposições: resolva a pendência abaixo ou mude a pergunta."}
           </p>
           <Needs issues={preview.pending} />
-          {earlier && <Earlier earlier={earlier} computed={false} />}
+          {earlier && <Earlier earlier={earlier} computed={false} historical={false} onRecorded={onRecorded} />}
         </div>
       </section>
     );
@@ -104,7 +121,7 @@ export function Answer({ outcome, preview, run, earlier, tracing, unit, context,
 
   const pending = preview?.pending ?? [];
   const warnings = [
-    ...(preview?.issues ?? []).filter((issue) => issue.severity === "warning").map((issue) => issue.message),
+    ...(historical ? [] : (preview?.issues ?? [])).filter((issue) => issue.severity === "warning").map((issue) => issue.message),
     ...notes.filter((note) => note.kind === "warn").map((note) => note.text),
   ];
 
@@ -120,11 +137,13 @@ export function Answer({ outcome, preview, run, earlier, tracing, unit, context,
       <div className="ans-side">
         <p className="ans-status">
           <span className={`ans-chip ${run ? "traced" : ""}`}>{run ? "rastreada" : "prévia"}</span>
-          {run
-            ? `Execução ${shortId(run.id)}, ${formatWhen(run.finished_at)}. Versões, regras, resultado e registros estão gravados.`
-            : tracing
-              ? "Rastreando: o motor está gravando versões, regras e registros."
-              : "Calculada agora pelo motor, sem gravar a linhagem. Rastrear grava versões, regras e registros."}
+          {run && historical
+            ? `Execução gravada ${shortId(run.id)}, ${formatWhen(run.finished_at)}, aberta como foi registrada.`
+            : run
+              ? `Execução ${shortId(run.id)}, ${formatWhen(run.finished_at)}. Versões, regras, resultado e registros estão gravados.`
+              : tracing
+                ? "Rastreando: o motor está gravando versões, regras e registros."
+                : "Calculada agora pelo motor, sem gravar a linhagem. Rastrear grava versões, regras e registros."}
         </p>
         {pending.length > 0 && !run && (
           <>
@@ -138,7 +157,7 @@ export function Answer({ outcome, preview, run, earlier, tracing, unit, context,
             {decisions && <Needs id="q-decisions" issues={pending} />}
           </>
         )}
-        {earlier && !tracing && <Earlier earlier={earlier} computed />}
+        {earlier && !tracing && <Earlier earlier={earlier} computed={preview?.computed ?? false} historical={historical} onRecorded={onRecorded} />}
         {warnings.map((text) => (
           <p key={text} className="ans-warn">
             {text}

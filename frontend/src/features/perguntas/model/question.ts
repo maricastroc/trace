@@ -223,7 +223,7 @@ export function starterPeriod(base: CatalogTable): QuestionPeriod | null {
     const range = defaultRange(base, { kind: "validity" });
     return { kind: "validity", reading: null, ...range };
   }
-  if (dates.length > 0) {
+  if (dates.length === 1) {
     const range = defaultRange(base, { kind: "date", column: dates[0].key });
     return { kind: "date", column: dates[0].key, ...range };
   }

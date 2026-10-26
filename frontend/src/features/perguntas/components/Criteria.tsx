@@ -4,13 +4,24 @@ import Link from "next/link";
 import { StatePill } from "@/components/ui/StatePill";
 import { formatCount, shortId } from "@/lib/format";
 import { useQuestionReadings } from "@/lib/queries";
-import type { Preview, QuestionSpec, RunDetail } from "@/lib/types";
+import type { Decision, Preview, QuestionSpec, RelationshipStandingKey, RunDetail } from "@/lib/types";
 import { answerValue, formatAnswer, type Note, type Outcome } from "../model/answer";
 import type { Catalog, CatalogTable } from "../model/catalog";
 import { brDate, periodLabel } from "../model/period";
 import { currentDimension, READING_TITLE } from "../model/question";
 
 const STANDING_WORDS: Record<string, string> = { suggested: "sugerida", confirmed: "confirmada", caveat: "confirmada com ressalva", rejected: "rejeitada", review: "para reavaliar" };
+
+type RecordedRelation = Extract<Decision, { kind: "relation" }>;
+
+function recordedStanding(decision: RecordedRelation): RelationshipStandingKey {
+  if (decision.status === "confirmed") return decision.policy ? "caveat" : "confirmed";
+  return decision.status === "rejected" ? "rejected" : "suggested";
+}
+
+function recordedRelations(run: RunDetail | null) {
+  return (run?.decisions ?? []).filter((decision): decision is RecordedRelation => decision.kind === "relation");
+}
 
 function measureText(question: QuestionSpec) {
   const column = question.measure.column;
@@ -31,10 +42,12 @@ function useReadingCriteria(question: QuestionSpec) {
   return readings.data?.data.readings.find((option) => option.reading === period.reading)?.criteria ?? null;
 }
 
-type CriteriaProps = { catalog: Catalog; base: CatalogTable; question: QuestionSpec; notes: Note[] };
+type CriteriaProps = { catalog: Catalog; base: CatalogTable; question: QuestionSpec; notes: Note[]; run?: RunDetail | null; historical?: boolean };
 
-export function Criteria({ catalog, base, question, notes }: CriteriaProps) {
-  const criteria = useReadingCriteria(question);
+export function Criteria({ catalog, base, question, notes, run = null, historical = false }: CriteriaProps) {
+  const current = useReadingCriteria(question);
+  const criteria = run ? (run.interpretation.criteria[0] ?? current) : current;
+  const recorded = recordedRelations(run);
   const period = question.period;
   const dimension = currentDimension(catalog, base, question.dimension);
   const relations = (question.dimension?.relationships ?? []).map((id) => catalog.relationById.get(id)).filter((relation) => relation !== undefined);
@@ -48,6 +61,7 @@ export function Criteria({ catalog, base, question, notes }: CriteriaProps) {
             <p className="cs-t">
               {READING_TITLE[period.reading]} {periodLabel(period.from, period.to)}
             </p>
+            {run && run.interpretation.criteria[0] && <p className="small-note">Regra gravada na execução {shortId(run.id)}.</p>}
             {criteria ? (
               <dl className="cs-dl">
                 <dt>entra</dt>
@@ -97,7 +111,21 @@ export function Criteria({ catalog, base, question, notes }: CriteriaProps) {
               : `Mantém só ${dimension.table.key}.${dimension.column} = ${question.dimension.value}. ${relations.length > 0 ? "Linhas vazias ou sem par saem na ligação" : `Linhas com outro valor ou vazias saem no recorte`}, com o motivo.`}
           </p>
         )}
-        {relations.length > 0 && (
+        {run && recorded.length > 0 && (
+          <ul className="rel-list" aria-label="Relações gravadas na execução">
+            {recorded.map((decision) => (
+              <li key={`${decision.position}-${decision.relationship_id}`}>
+                <StatePill status={recordedStanding(decision)} />
+                <span className="mono">{decision.route}</span>
+                <span className="small-note">no momento da execução</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {historical && run && run.decision_changes.length > 0 && (
+          <p className="small-note">O estado atual do Mapa mudou depois desta execução; o aviso na resposta diz o quê. Aqui ficam as decisões gravadas.</p>
+        )}
+        {!run && relations.length > 0 && (
           <ul className="rel-list">
             {relations.map((relation) => (
               <li key={relation.id}>
@@ -131,6 +159,13 @@ export function Criteria({ catalog, base, question, notes }: CriteriaProps) {
   );
 }
 
+function validityColumns(run: RunDetail | null, base: CatalogTable) {
+  const recorded = run?.interpretation.criteria[0];
+  const declared = recorded ? { start_column: recorded.start_column, end_column: recorded.end_column } : base.validity;
+  if (!declared) return " (não declarada)";
+  return ` (${declared.start_column}${declared.end_column ? ` → ${declared.end_column}` : ""})`;
+}
+
 type SpecProps = {
   catalog: Catalog;
   base: CatalogTable;
@@ -155,7 +190,7 @@ export function Spec({ catalog, base, question, text, preview, run, outcome }: S
     ? "sem período"
     : period.kind === "date"
       ? `${base.key}.${period.column} entre ${brDate(period.from)} e ${brDate(period.to)}`
-      : `vigência de ${base.key}${base.validity ? ` (${base.validity.start_column}${base.validity.end_column ? ` → ${base.validity.end_column}` : ""})` : " (não declarada)"} · leitura ${period.reading ? `${period.reading} (${READING_TITLE[period.reading].toLocaleLowerCase("pt-BR")})` : "pendente"} · ${brDate(period.from)} a ${brDate(period.to)}`;
+      : `vigência de ${base.key}${validityColumns(run, base)} · leitura ${period.reading ? `${period.reading} (${READING_TITLE[period.reading].toLocaleLowerCase("pt-BR")})` : "pendente"} · ${brDate(period.from)} a ${brDate(period.to)}`;
   const recorte = !question.dimension
     ? "nenhum"
     : question.dimension.value === null
@@ -172,7 +207,7 @@ export function Spec({ catalog, base, question, text, preview, run, outcome }: S
           <dd>{text}</dd>
           <dt>tabela</dt>
           <dd>
-            {base.key} · versão {base.versionNumber} · {formatCount(base.rows)} linhas
+            {base.key} · versão {run?.inputs[0]?.version_number ?? base.versionNumber} · {formatCount(run?.inputs[0]?.row_count ?? base.rows)} linhas
           </dd>
           <dt>medida</dt>
           <dd>{measure}</dd>
@@ -182,9 +217,15 @@ export function Spec({ catalog, base, question, text, preview, run, outcome }: S
           <dd>{recorte}</dd>
           <dt>relações</dt>
           <dd>
-            {relations.length === 0
-              ? "nenhuma"
-              : relations.map((relation) => `${catalog.byId.get(relation.from.table)?.key}.${relation.from.column} → ${catalog.byId.get(relation.to.table)?.key}.${relation.to.column} · ${STANDING_WORDS[relation.standing] ?? relation.standing}`).join("\n")}
+            {run
+              ? recordedRelations(run).length === 0
+                ? "nenhuma"
+                : recordedRelations(run)
+                    .map((decision) => `${decision.route} · ${STANDING_WORDS[recordedStanding(decision)]} na execução`)
+                    .join("\n")
+              : relations.length === 0
+                ? "nenhuma"
+                : relations.map((relation) => `${catalog.byId.get(relation.from.table)?.key}.${relation.from.column} → ${catalog.byId.get(relation.to.table)?.key}.${relation.to.column} · ${STANDING_WORDS[relation.standing] ?? relation.standing}`).join("\n")}
           </dd>
           <dt>resultado</dt>
           <dd>{value === null ? "—" : `${formatAnswer(value)} · ${run ? `execução ${shortId(run.id)}` : "prévia, nada gravado"}`}</dd>

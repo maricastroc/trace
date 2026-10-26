@@ -29,6 +29,7 @@ import { Result } from "./components/Result";
 import type { TraceControl } from "./components/Investigate";
 import { Setup } from "./components/Setup";
 import { fromPreview, fromRun, labelsOf, traceDifferences, type ResultModel } from "./model/result";
+import { browserStorage, readState, stashState } from "@/lib/address-state";
 import { decodeSpec, emptyDraft, encodeSpec, fromSpec, RULE_TEXT, suggestions, toSpec, type Draft, type Naming } from "./model/spec";
 
 export function ComparacoesScreen() {
@@ -89,7 +90,7 @@ function Workspace({ catalog }: { catalog: Catalog }) {
   const toast = useToast();
   const client = useQueryClient();
   const runParam = params.get("execucao");
-  const specParam = useMemo(() => decodeSpec(params.get("c")), [params]);
+  const specParam = useMemo(() => decodeSpec(readState(browserStorage(), "c", params.get("c"))), [params]);
   const location = params.toString();
 
   const recipes = useRecipes();
@@ -129,7 +130,7 @@ function Workspace({ catalog }: { catalog: Catalog }) {
   const showSetup = editing || (!runParam && !specParam);
 
   const go = (search: string, replace = false) => (replace ? router.replace(`/comparacoes${search}`, { scroll: false }) : router.push(`/comparacoes${search}`, { scroll: false }));
-  const openSpec = (spec: ComparisonSpec, replace = false) => go(`?c=${encodeURIComponent(encodeSpec(spec))}`, replace);
+  const openSpec = (spec: ComparisonSpec, replace = false) => go(`?c=${encodeURIComponent(stashState(browserStorage(), "c", encodeSpec(spec)))}`, replace);
 
   const onTrace = () => {
     if (!previewData || !result) return;

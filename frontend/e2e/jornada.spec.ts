@@ -136,4 +136,20 @@ test("a file goes from import to a traced question and a traced comparison, and 
   await expect(page.getByRole("status").filter({ hasText: "Execução rastreada em" })).toBeVisible();
   await expect(answer).toContainText(split);
   expect(previews).toHaveLength(0);
+
+  await page.goto("/mapa?tabela=visitas_jornada");
+  const panel = page.getByRole("dialog", { name: "visitas_jornada" });
+  await panel.getByRole("button", { name: "Remover tabela" }).click();
+  const confirm = panel.getByRole("group", { name: "Confirmar a remoção de visitas_jornada" });
+  await expect(confirm).toContainText("visitas_jornada foi usada em 2 execuções rastreadas, 1 pergunta ou receita, 1 comparação.");
+  await expect(confirm).toContainText("Cópias feitas fora do Trace");
+  const erase = confirm.getByRole("button", { name: "Apagar a tabela e o histórico" });
+  await expect(erase).toBeDisabled();
+  await confirm.getByRole("textbox", { name: /Para confirmar, digite/ }).fill("visitas_jornada");
+  await erase.click();
+  await expect(page.getByText("visitas_jornada apagada com 2 execuções e 1 comparação que dependiam dela.")).toBeVisible();
+  const erasures = (await (await request.get(`${API_URL}/dataset-erasures`, { headers })).json()) as { data: { dataset_key: string; versions: { row_count: number }[] }[] };
+  expect(erasures.data.map((item) => [item.dataset_key, item.versions[0].row_count])).toEqual([["visitas_jornada", visits.length]]);
+  await page.goto("/comparacoes");
+  await expect(page.getByRole("region", { name: "Comparações rastreadas" }).getByRole("listitem").filter({ hasText: "unidades_jornada.id" })).toHaveCount(0);
 });
