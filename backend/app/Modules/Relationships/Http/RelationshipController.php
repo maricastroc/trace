@@ -22,7 +22,7 @@ final class RelationshipController
     public function index(Workspace $workspace): JsonResponse
     {
         $relationships = $workspace->relationships()
-            ->with('fromDataset.latestVersion', 'toDataset.latestVersion.columns')
+            ->with('fromDataset.latestVersion', 'toDataset.latestVersion.columns', 'fromVersion', 'toVersion')
             ->orderByRaw("CASE status WHEN 'confirmed' THEN 0 WHEN 'suggested' THEN 1 ELSE 2 END")
             ->orderByDesc('score')
             ->get();
@@ -110,6 +110,20 @@ final class RelationshipController
     public function reopen(Workspace $workspace, string $relationship): JsonResponse
     {
         $model = $this->service->reopen($workspace->relationships()->findOrFail($relationship));
+
+        return response()->json(['data' => RelationshipPresenter::present($model)]);
+    }
+
+    public function declareIdentity(Workspace $workspace, string $relationship): JsonResponse
+    {
+        $model = $this->service->declareIdentity($workspace->relationships()->findOrFail($relationship));
+
+        return response()->json(['data' => RelationshipPresenter::present($model)]);
+    }
+
+    public function retractIdentity(Workspace $workspace, string $relationship): JsonResponse
+    {
+        $model = $this->service->retractIdentity($workspace->relationships()->findOrFail($relationship));
 
         return response()->json(['data' => RelationshipPresenter::present($model)]);
     }

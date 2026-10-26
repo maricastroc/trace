@@ -92,6 +92,30 @@ class CsvReaderTest extends TestCase
         $this->assertSame([3, 4], array_column($error->details['examples'], 'line'));
     }
 
+    public function test_rejects_an_unclosed_quote_instead_of_swallowing_the_rest_of_the_file(): void
+    {
+        $last = $this->assertInvalid('unclosed_quote', "a,b,c\n1,2,\"x\n4,5,6\n7,8,9\n");
+        $this->assertSame(2, $last->details['line']);
+
+        $middle = $this->assertInvalid('unclosed_quote', "a,b,c\n1,\"x,3\n4,5,6\n");
+        $this->assertSame(2, $middle->details['line'], 'the quote is named, not reported as rows with the wrong number of columns');
+
+        $parsed = $this->reader()->readString("a,b\n1,\"dito \"\"assim\"\"\nem duas linhas\"\n2,ok\n");
+        $this->assertCount(2, $parsed->records, 'escaped quotes and line breaks inside closed quotes are still fine');
+    }
+
+    public function test_reads_old_mac_line_endings_and_reports_rows_made_only_of_separators(): void
+    {
+        $parsed = $this->reader()->readString("id,nome\r1,Ana\r2,Bia\r");
+        $this->assertCount(2, $parsed->records);
+        $this->assertContains('line_endings_converted', array_column($parsed->warnings, 'code'));
+
+        $skipped = $this->reader()->readString("id,nome\n1,Ana\n,\n2,Bia\n\n");
+        $this->assertCount(2, $skipped->records);
+        $warning = collect($skipped->warnings)->firstWhere('code', 'separator_rows_skipped');
+        $this->assertSame(1, $warning['count'], 'a trailing blank line is not counted, a row of separators is');
+    }
+
     public function test_rejects_duplicate_and_empty_headers(): void
     {
         $this->assertInvalid('duplicate_header', "id,Id\n1,2\n");

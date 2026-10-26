@@ -3,6 +3,7 @@
 namespace App\Modules\Comparisons\Http;
 
 use App\Modules\Comparisons\Comparison;
+use App\Modules\Comparisons\ComparisonDrift;
 use App\Modules\Comparisons\ComparisonInvestigation;
 use App\Modules\Comparisons\ComparisonLauncher;
 use App\Modules\Comparisons\ComparisonPresenter;
@@ -51,17 +52,19 @@ final class ComparisonController
 
     public function show(Workspace $workspace, string $run): JsonResponse
     {
-        return response()->json(['data' => ComparisonPresenter::run($workspace->comparisonRuns()->findOrFail($run))]);
+        $model = $workspace->comparisonRuns()->findOrFail($run);
+
+        return response()->json(['data' => ComparisonPresenter::run($model, ComparisonDrift::of($workspace, $model))]);
     }
 
     public function identities(Request $request, Workspace $workspace, string $run, ComparisonInvestigation $investigation): JsonResponse
     {
         $filters = array_filter([
-            'category' => is_string($request->query('category')) ? $request->query('category') : null,
-            'explanation' => is_string($request->query('explanation')) ? $request->query('explanation') : null,
-            'repeated' => is_string($request->query('repeated')) ? $request->query('repeated') : null,
+            'category' => is_string($request->input('category')) ? $request->input('category') : null,
+            'explanation' => is_string($request->input('explanation')) ? $request->input('explanation') : null,
+            'repeated' => is_string($request->input('repeated')) ? $request->input('repeated') : null,
             'changed' => $request->boolean('changed') ?: null,
-            'search' => is_string($request->query('search')) ? $request->query('search') : null,
+            'search' => is_string($request->input('search')) ? $request->input('search') : null,
         ], fn ($value) => $value !== null);
 
         return response()->json($investigation->identities($workspace->comparisonRuns()->findOrFail($run), $filters, Pagination::fromRequest($request, 25, 200)));
@@ -71,10 +74,10 @@ final class ComparisonController
     {
         return response()->json($investigation->rows(
             $workspace->comparisonRuns()->findOrFail($run),
-            (string) $request->query('side', ''),
-            is_string($request->query('identity')) ? $request->query('identity') : null,
+            (string) $request->input('side', ''),
+            is_string($request->input('identity')) ? $request->input('identity') : null,
             $request->boolean('empty'),
-            (string) $request->query('state', 'selected'),
+            (string) $request->input('state', 'selected'),
             Pagination::fromRequest($request, 20, 100),
         ));
     }

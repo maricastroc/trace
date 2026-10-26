@@ -23,13 +23,13 @@ final class Explainer
     {
         return match ($code) {
             'join.left_unmatched' => self::noMatch($detail),
-            'join.null_key' => "{$detail['probe']['alias']}.{$detail['probe']['column']} está vazio; o registro não pôde ser relacionado.",
-            'join.right_unmatched' => "Nenhum registro que chegou à junção tem {$detail['probe']['alias']}.{$detail['probe']['column']} = \"{$detail['key']}\"; este registro de {$detail['lookup']['alias']} não foi relacionado.",
-            'join.lookup_null_key' => "{$detail['lookup']['alias']}.{$detail['lookup']['column']} está vazio; este registro não pode ser encontrado pela junção.",
-            'join.multiple_matches' => "A chave \"{$detail['key']}\" corresponde a {$detail['matches']} registros de {$detail['lookup']['alias']}; o registro foi multiplicado por {$detail['matches']}.",
+            'join.null_key' => "{$detail['probe']['alias']}.{$detail['probe']['column']} está vazio; a linha não pôde ser relacionada.",
+            'join.right_unmatched' => "Nenhuma linha que chegou à junção tem {$detail['probe']['alias']}.{$detail['probe']['column']} = \"{$detail['key']}\"; esta linha de {$detail['lookup']['alias']} não foi relacionada.",
+            'join.lookup_null_key' => "{$detail['lookup']['alias']}.{$detail['lookup']['column']} está vazio; esta linha não pode ser encontrada pela junção.",
+            'join.multiple_matches' => "A chave \"{$detail['key']}\" corresponde a {$detail['matches']} linhas de {$detail['lookup']['alias']}; a linha foi multiplicada por {$detail['matches']}.",
             'aggregate.null_ignored' => "{$detail['alias']}.{$detail['column']} está vazio e foi ignorado na soma de {$detail['measure']}.",
             'aggregate.unconvertible_ignored' => "{$detail['alias']}.{$detail['column']} = \"{$detail['value']}\" não é um número e foi ignorado na soma de {$detail['measure']}.",
-            'aggregate.distinct_null_ignored' => "{$detail['alias']}.{$detail['column']} está vazio; o registro não tem identidade e não entra na contagem de valores diferentes de {$detail['measure']}.",
+            'aggregate.distinct_null_ignored' => "{$detail['alias']}.{$detail['column']} está vazio; a linha não tem valor e não entra na contagem de valores diferentes de {$detail['measure']}.",
             default => $code,
         };
     }
@@ -69,8 +69,8 @@ final class Explainer
             'inverted' => 'a data de fim é anterior à de início',
             'started_before' => "começou antes de {$from}",
             'started_after' => "começou depois de {$to}",
-            'ended_before' => "terminou antes de {$from}",
-            'ended_during' => "terminou durante o período, antes de {$to}",
+            'ended_before' => ($detail['end_inclusive'] ?? true) ? "terminou antes de {$from}" : "terminou até {$from}, e o dia do fim não conta como vigente",
+            'ended_during' => ($detail['end_inclusive'] ?? true) ? "terminou durante o período, antes de {$to}" : "terminou durante o período, até {$to}, e o dia do fim não conta como vigente",
             default => 'não atende à leitura escolhida',
         };
 
@@ -97,7 +97,7 @@ final class Explainer
 
     private static function noMatch(array $detail): string
     {
-        $text = "Nenhum registro de {$detail['lookup']['alias']} tem {$detail['lookup']['column']} = \"{$detail['key']}\".";
+        $text = "Nenhuma linha de {$detail['lookup']['alias']} tem {$detail['lookup']['column']} = \"{$detail['key']}\".";
         $near = $detail['near_match'] ?? null;
 
         if ($near !== null) {

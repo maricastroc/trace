@@ -34,6 +34,8 @@ final class RecipePreview
                     fn (array $input) => array_intersect_key($input, array_flip(['position', 'alias', 'dataset_id', 'dataset_name', 'version_id', 'version_number'])),
                     $compiled->inputs,
                 ),
+                'decisions' => $decisions = Decisions::of($compiled->steps, $compiled->inputs),
+                'decisions_key' => Decisions::key($decisions),
             ],
             'issues' => $compiled->issues,
             'recipe_steps' => $compiled->steps,

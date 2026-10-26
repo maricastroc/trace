@@ -10,8 +10,8 @@ final class Pagination
 
     public static function fromRequest(Request $request, int $default = 25, int $max = 100): self
     {
-        $page = max(1, (int) $request->query('page', 1));
-        $perPage = (int) $request->query('per_page', $default);
+        $page = min(max(1, (int) $request->input('page', 1)), 1000000);
+        $perPage = (int) $request->input('per_page', $default);
 
         return new self($page, min(max(1, $perPage), $max));
     }

@@ -5,6 +5,7 @@ namespace App\Modules\Comparisons;
 use App\Modules\Datasets\Dataset;
 use App\Modules\Datasets\DatasetVersion;
 use App\Modules\Recipes\CompiledRecipe;
+use App\Modules\Recipes\Decisions;
 use App\Modules\Runs\Run;
 
 final class SidePlan
@@ -65,6 +66,21 @@ final class SidePlan
             'period' => $this->definition['period'] ?? null,
             'dimension' => $this->definition['dimension'] ?? null,
             'steps' => $steps,
+            'decisions' => $decisions = $this->decisions(),
+            'decisions_key' => Decisions::key($decisions),
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function decisions(): array
+    {
+        $decisions = $this->compiled !== null
+            ? Decisions::of($this->compiled->steps, $this->compiled->inputs)
+            : Decisions::of($this->run?->steps() ?? [], $this->run?->inputs() ?? []);
+        $decisions[] = Decisions::validity(null, $this->dataset->key, $this->dataset->id, $this->validity ?? []);
+
+        return $decisions;
     }
 }

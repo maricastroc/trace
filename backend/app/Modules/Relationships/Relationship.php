@@ -3,6 +3,7 @@
 namespace App\Modules\Relationships;
 
 use App\Modules\Datasets\Dataset;
+use App\Modules\Datasets\DatasetVersion;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,7 +22,7 @@ class Relationship extends Model
 
     protected $fillable = [
         'workspace_id', 'from_dataset_id', 'from_column', 'to_dataset_id', 'to_column', 'status', 'policy', 'origin',
-        'score', 'evidence', 'from_version_id', 'to_version_id', 'confirmed_at', 'rejected_at',
+        'score', 'evidence', 'from_version_id', 'to_version_id', 'confirmed_at', 'rejected_at', 'identity_declared_at',
     ];
 
     protected function casts(): array
@@ -31,6 +32,7 @@ class Relationship extends Model
             'score' => 'float',
             'confirmed_at' => 'datetime',
             'rejected_at' => 'datetime',
+            'identity_declared_at' => 'datetime',
         ];
     }
 
@@ -42,6 +44,21 @@ class Relationship extends Model
     public function toDataset(): BelongsTo
     {
         return $this->belongsTo(Dataset::class, 'to_dataset_id');
+    }
+
+    public function fromVersion(): BelongsTo
+    {
+        return $this->belongsTo(DatasetVersion::class, 'from_version_id');
+    }
+
+    public function toVersion(): BelongsTo
+    {
+        return $this->belongsTo(DatasetVersion::class, 'to_version_id');
+    }
+
+    public function identityDeclared(): bool
+    {
+        return $this->identity_declared_at !== null && $this->status !== self::REJECTED;
     }
 
     public function isConfirmed(): bool

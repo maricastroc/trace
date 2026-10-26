@@ -28,6 +28,7 @@ Route::prefix('v1')->group(function () {
         Route::post('datasets/{dataset}/versions', [DatasetController::class, 'storeVersion'])->middleware('throttle:uploads');
         Route::get('dataset-versions/{version}', [DatasetVersionController::class, 'show']);
         Route::get('dataset-versions/{version}/rows', [DatasetVersionController::class, 'rows']);
+        Route::post('dataset-versions/{version}/rows/search', [DatasetVersionController::class, 'rows']);
 
         Route::get('relationships', [RelationshipController::class, 'index']);
         Route::post('relationships', [RelationshipController::class, 'store']);
@@ -38,6 +39,8 @@ Route::prefix('v1')->group(function () {
         Route::post('relationships/{relationship}/confirm', [RelationshipController::class, 'confirm']);
         Route::post('relationships/{relationship}/reject', [RelationshipController::class, 'reject']);
         Route::post('relationships/{relationship}/reopen', [RelationshipController::class, 'reopen']);
+        Route::post('relationships/{relationship}/identity', [RelationshipController::class, 'declareIdentity']);
+        Route::delete('relationships/{relationship}/identity', [RelationshipController::class, 'retractIdentity']);
         Route::post('relationships/{relationship}/correct', [RelationshipController::class, 'correct']);
 
         Route::get('recipes', [RecipeController::class, 'index']);
@@ -60,7 +63,9 @@ Route::prefix('v1')->group(function () {
         Route::get('comparison-runs', [ComparisonController::class, 'runs']);
         Route::get('comparison-runs/{run}', [ComparisonController::class, 'show']);
         Route::get('comparison-runs/{run}/identities', [ComparisonController::class, 'identities']);
+        Route::post('comparison-runs/{run}/identities/search', [ComparisonController::class, 'identities']);
         Route::get('comparison-runs/{run}/rows', [ComparisonController::class, 'rows']);
+        Route::post('comparison-runs/{run}/rows/search', [ComparisonController::class, 'rows']);
 
         Route::get('runs', [RunController::class, 'index']);
         Route::get('runs/{run}', [RunController::class, 'show']);
@@ -74,6 +79,7 @@ Route::prefix('v1')->group(function () {
         Route::get('runs/{run}/exclusions', [RunController::class, 'exclusions']);
         Route::get('runs/{run}/diagnostics', [RunController::class, 'diagnostics']);
         Route::get('runs/{run}/rows', [RunController::class, 'findRows']);
+        Route::post('runs/{run}/rows/search', [RunController::class, 'findRows']);
         Route::get('runs/{run}/rows/{row}/journey', [RunController::class, 'journey']);
     });
 });

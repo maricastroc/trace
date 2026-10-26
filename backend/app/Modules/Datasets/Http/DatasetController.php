@@ -6,6 +6,7 @@ use App\Modules\Datasets\Dataset;
 use App\Modules\Datasets\DatasetPresenter;
 use App\Modules\Datasets\Import\CsvImporter;
 use App\Modules\Support\DomainError;
+use App\Modules\Support\UploadLimit;
 use App\Modules\Workspaces\Workspace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -136,13 +137,14 @@ final class DatasetController
             throw new DomainError('uploads.disabled', 'O envio de arquivos está desativado nesta demonstração pública. Explore os dados sintéticos.', 403);
         }
 
-        $maxKb = (int) config('trace.limits.upload_kb');
+        $maxKb = UploadLimit::kilobytes();
         $request->validate([
             'file' => ['required', 'file', "max:{$maxKb}", 'extensions:csv,txt,tsv'],
         ], [
             'file.required' => 'Selecione um arquivo CSV.',
+            'file.uploaded' => "O servidor não recebeu o arquivo inteiro. O limite de envio desta instalação é {$maxKb} KB.",
             'file.file' => 'O envio do arquivo falhou. Tente novamente.',
-            'file.max' => "O arquivo excede o limite de {$maxKb} KB.",
+            'file.max' => "O arquivo excede o limite de {$maxKb} KB desta instalação.",
             'file.extensions' => 'Envie um arquivo .csv, .tsv ou .txt.',
         ]);
 

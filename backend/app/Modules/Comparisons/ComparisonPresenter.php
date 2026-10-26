@@ -4,7 +4,10 @@ namespace App\Modules\Comparisons;
 
 final class ComparisonPresenter
 {
-    public static function run(ComparisonRun $run): array
+    /**
+     * @param  array{a: list<array<string, mixed>>, b: list<array<string, mixed>>, equivalence: string|null}|null  $changes
+     */
+    public static function run(ComparisonRun $run, ?array $changes = null): array
     {
         $sides = [];
         foreach (['a', 'b'] as $side) {
@@ -22,6 +25,7 @@ final class ComparisonPresenter
             'attribution' => $run->attribution,
             'equivalence' => $run->equivalence,
             'issues' => $run->issues,
+            'changes' => $changes,
             'summary' => $run->summary,
             'error' => $run->error,
             'duration_ms' => $run->duration_ms,
@@ -42,6 +46,7 @@ final class ComparisonPresenter
                 'dataset' => $basis['dataset'],
                 'version' => $basis['version'],
                 'key' => $basis['key'],
+                'decisions_key' => $basis['decisions_key'] ?? null,
             ];
         }
 
@@ -49,7 +54,7 @@ final class ComparisonPresenter
             'id' => $run->id,
             'status' => $run->status,
             'rules' => $run->spec['rules'] ?? [],
-            'equivalence' => $run->equivalence === null ? null : ['status' => $run->equivalence['status'], 'statement' => $run->equivalence['statement']],
+            'equivalence' => $run->equivalence === null ? null : ['status' => $run->equivalence['status'], 'statement' => $run->equivalence['statement'], 'reading' => $run->equivalence['reading']['kind'] ?? null],
             'sides' => $sides,
             'summary' => $run->summary === null ? null : array_intersect_key($run->summary, array_flip(['a', 'b', 'shared', 'shared_by_rule', 'only_a', 'only_b', 'net_difference', 'unmatched'])),
             'queued_at' => $run->queued_at?->toIso8601String(),

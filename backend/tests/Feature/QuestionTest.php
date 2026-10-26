@@ -91,6 +91,39 @@ class QuestionTest extends TestCase
         $this->assertSame('Pergunta de teste', $recipe['name']);
     }
 
+    public function test_a_traced_run_records_its_decisions_and_reports_the_ones_that_changed_later(): void
+    {
+        [$token, $datasets, $kitchens] = $this->cadastro();
+        $question = $this->beneficiariesQuestion($datasets, $kitchens, 'active_any');
+        $before = $this->api($token, 'POST', 'questions/preview', ['question' => $question])->assertOk()->json('data.preview');
+
+        [, $run] = $this->trace($token, $question);
+        $this->assertSame($before['basis']['decisions_key'], $run['decisions_key'], 'preview and run agree while nothing changes');
+        $this->assertEquals($question['measure'], $run['recipe']['question']['measure'], 'the question travels with the run');
+        $this->assertSame([], $run['decision_changes']);
+        $relation = collect($run['decisions'])->firstWhere('kind', 'relation');
+        $validity = collect($run['decisions'])->firstWhere('kind', 'validity');
+        $this->assertSame(['confirmed', null, 'beneficiarios.cozinha_id → cozinhas.id'], [$relation['status'], $relation['policy'], $relation['route']]);
+        $this->assertSame(['data_cadastro', 'data_desligamento', true], [$validity['start_column'], $validity['end_column'], $validity['end_inclusive']]);
+        $join = collect($run['steps'])->firstWhere('type', 'join');
+        $this->assertSame(['confirmed', null, 'forward'], [$join['join']['relationship_status'], $join['join']['relationship_policy'], $join['join']['direction']]);
+
+        $this->api($token, 'PUT', "datasets/{$datasets['beneficiarios']['id']}/validity", [
+            'start_column' => 'data_cadastro', 'end_column' => 'data_desligamento', 'end_inclusive' => false,
+        ])->assertOk();
+        $after = $this->api($token, 'POST', 'questions/preview', ['question' => $question])->assertOk()->json('data.preview');
+        $this->assertNotSame($run['decisions_key'], $after['basis']['decisions_key'], 'the current preview no longer matches the run');
+
+        $this->api($token, 'POST', "relationships/{$kitchens['id']}/reopen")->assertOk();
+        $old = $this->api($token, 'GET', "runs/{$run['id']}")->assertOk()->json('data');
+        $this->assertSame($run['totals'], $old['totals'], 'the old run keeps its numbers');
+        $this->assertSame($run['decisions'], $old['decisions'], 'and the decisions it used');
+        $this->assertSame([
+            'A vigência de beneficiarios era data_cadastro → data_desligamento (fim incluído); agora é data_cadastro → data_desligamento (fim excluído).',
+            'A relação beneficiarios.cozinha_id → cozinhas.id estava confirmada como N:1; agora está sugerida, sem confirmação.',
+        ], array_column($old['decision_changes'], 'message'));
+    }
+
     public function test_a_single_kitchen_is_filtered_through_the_relation_and_matches_an_independent_count(): void
     {
         [$token, $datasets, $kitchens] = $this->cadastro();
@@ -200,7 +233,7 @@ class QuestionTest extends TestCase
 
         $answer = $this->api($token, 'POST', 'questions/preview', ['question' => $question])->assertOk()->json('data');
         $this->assertSame(['periodo', 'resposta'], array_column($answer['recipe']['steps'], 'id'));
-        $this->assertSame('Soma quantidade em todos os registros e conta os registros', $answer['preview']['steps'][1]['plain']['headline']);
+        $this->assertSame('Soma quantidade em todas as linhas e conta as linhas', $answer['preview']['steps'][1]['plain']['headline']);
 
         $september = $this->rows($ids['refeicoes'])->filter(fn (array $r) => str_starts_with($r['data'], '2026-09'));
         $this->assertEquals(['resposta' => (string) $september->sum(fn (array $r) => (int) $r['quantidade']), 'registros' => $september->count()], $answer['preview']['results'][0]['values']);

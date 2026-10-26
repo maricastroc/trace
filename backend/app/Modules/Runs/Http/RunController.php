@@ -2,6 +2,7 @@
 
 namespace App\Modules\Runs\Http;
 
+use App\Modules\Recipes\Decisions;
 use App\Modules\Recipes\PlainLanguage;
 use App\Modules\Runs\Lineage\RowJourney;
 use App\Modules\Runs\Lineage\RunLineage;
@@ -23,7 +24,7 @@ final class RunController
     {
         $run = $launcher->launch($workspace, $workspace->recipes()->findOrFail($recipe));
 
-        return response()->json(['data' => $this->detail($run)], 202);
+        return response()->json(['data' => $this->detail($workspace, $run)], 202);
     }
 
     public function index(Request $request, Workspace $workspace): JsonResponse
@@ -46,7 +47,7 @@ final class RunController
 
     public function show(Workspace $workspace, string $run): JsonResponse
     {
-        return response()->json(['data' => $this->detail($this->find($workspace, $run))]);
+        return response()->json(['data' => $this->detail($workspace, $this->find($workspace, $run))]);
     }
 
     public function results(Request $request, Workspace $workspace, string $run): JsonResponse
@@ -145,7 +146,7 @@ final class RunController
     public function findRows(Request $request, Workspace $workspace, string $run): JsonResponse
     {
         $model = $this->ready($workspace, $run);
-        $alias = $request->query('alias');
+        $alias = $request->input('alias');
         if (! is_string($alias)) {
             throw new DomainError('run.search_invalid', 'Informe o conjunto (alias) a pesquisar.');
         }
@@ -153,8 +154,8 @@ final class RunController
         return response()->json(['data' => $this->lineage->findRows(
             $model,
             $alias,
-            is_string($request->query('column')) ? $request->query('column') : null,
-            is_string($request->query('value')) ? $request->query('value') : null,
+            is_string($request->input('column')) ? $request->input('column') : null,
+            is_string($request->input('value')) ? $request->input('value') : null,
             $this->optionalInt($request, 'row_number'),
         )]);
     }
@@ -175,7 +176,7 @@ final class RunController
         return $model;
     }
 
-    private function detail(Run $run): array
+    private function detail(Workspace $workspace, Run $run): array
     {
         $currentRevision = $run->recipe_id ? DB::table('recipes')->where('id', $run->recipe_id)->value('revision') : null;
         $latest = DB::table('dataset_versions')
@@ -186,12 +187,16 @@ final class RunController
             ->map(fn ($n) => (int) $n)
             ->all();
 
+        $decisions = Decisions::of($run->steps(), $run->inputs());
+
         return RunPresenter::detail(
             $run,
             $run->status === Run::SUCCEEDED ? $this->lineage->steps($run) : $this->plannedSteps($run),
             $this->lineage->inputs($run),
             $currentRevision === null ? null : (int) $currentRevision,
             $latest,
+            $decisions,
+            Decisions::changes($workspace, $decisions),
         );
     }
 
@@ -222,8 +227,12 @@ final class RunController
 
     private function optionalInt(Request $request, string $key): ?int
     {
-        $value = $request->query($key);
+        $value = $request->input($key);
 
-        return is_string($value) && preg_match('/^\d{1,9}$/', $value) === 1 ? (int) $value : null;
+        return match (true) {
+            is_int($value) && $value >= 0 && $value <= 999999999 => $value,
+            is_string($value) && preg_match('/^\d{1,9}$/', $value) === 1 => (int) $value,
+            default => null,
+        };
     }
 }

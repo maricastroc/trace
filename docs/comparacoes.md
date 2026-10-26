@@ -35,14 +35,17 @@ A reconciliação compara texto com texto. Ela não sabe se as duas colunas iden
 | Estado | Quando | Precisa de confirmação |
 |---|---|---|
 | `same_field` | Os dois lados usam a mesma coluna da mesma tabela (versões, períodos ou recortes de uma tabela). A equivalência vem da própria definição. | Não |
-| `relation` | Existe no Mapa uma relação confirmada (sem multiplicidade aceita) entre exatamente essas duas colunas, orientada de uma chave estrangeira para a coluna que identifica o registro referenciado: na versão comparada, o destino não se repete e a origem se repete (várias linhas apontam para o mesmo registro). Os dois lados usam, portanto, os mesmos identificadores. | Não |
+| `map_declared` | No Mapa, a pessoa declarou que as colunas da relação entre exatamente essas duas colunas identificam a mesma entidade (`relationships.identity_declared_at`, "Mesma entidade?" no painel da relação). Vale para todas as comparações desse par, até ser retirada. Não vale para uma relação rejeitada. | Já confirmada, no Mapa |
 | `declared` | A pessoa declarou, nesta comparação, que as duas colunas identificam a mesma entidade. | Já confirmada |
-| `unconfirmed` | Nenhum dos casos acima. Uma relação apenas sugerida, rejeitada ou em revisão é mostrada como evidência, mas não basta. Uma relação confirmada também não basta quando o destino se repete (multiplicidade aceita) ou quando a origem também não se repete (um para um pode ligar entidades diferentes). | Sim |
+| `unconfirmed` | Nenhum dos casos acima. Uma relação apenas sugerida, rejeitada ou em revisão é mostrada como evidência, mas não basta. Uma relação confirmada também não basta, mesmo N:1 com destino único: confirmar autoriza usar a relação para ligar tabelas, não declara que as colunas identificam a mesma entidade. | Sim |
+| `relation` | Só em execuções antigas, gravadas antes da declaração de identidade no Mapa: a relação confirmada N:1 bastava. A interface mostra o estado gravado como "relação confirmada no Mapa". | — |
 
 - Nomes de colunas, tipos, valores parecidos ou uma relação entre as tabelas (e não entre essas duas colunas) nunca dispensam a confirmação.
 - A declaração vai na definição: `"equivalence": {"a": {"dataset_id": "…", "key": "id"}, "b": {"dataset_id": "…", "key": "municipio"}}`. Ela só vale para as colunas que nomeia; se uma delas mudar, a declaração é ignorada (aviso `comparison.equivalence_stale`) e é preciso confirmar de novo.
 - Sem equivalência, a prévia ainda calcula (não grava nada), mas devolve a pendência `comparison.equivalence_unconfirmed`. A interface não mostra o resultado antes da confirmação. A execução rastreada recusa a definição (`comparison.not_runnable`).
-- Equivalência de identidade não é autorização de ligação: uma relação usável para ligar tabelas numa receita pode não bastar para comparar identidades, e vice-versa.
+- Equivalência de identidade não é autorização de ligação: uma relação usável para ligar tabelas numa receita pode não bastar para comparar identidades, e vice-versa. O Trace separa cinco coisas: a relação existir (`status`), a multiplicidade (`policy`, unicidade do destino), a correspondência dos valores (cobertura, na evidência), a identidade (`identity_declared_at` ou a declaração da comparação) e a autorização de uso (`standing.usable` mais as pendências do compilador).
+- Rejeitar uma relação retira a declaração de identidade. Reabrir ("Desfazer decisão") não a retira: ela tem o próprio botão "Retirar a declaração".
+- Quando há relações nos dois sentidos entre as mesmas colunas, vale primeiro a que tem identidade declarada, depois a confirmada, depois a sugerida; o empate é resolvido pela mais antiga.
 - A execução rastreada grava o estado e a frase da equivalência (`comparison_runs.equivalence`). Uma equivalência declarada fica registrada como declarada pela pessoa, não verificada pelo Trace. A declaração não muda a reconciliação nem as regras de igualdade.
 
 ## O que cada lado representa
@@ -51,13 +54,14 @@ Junto com a equivalência, o motor devolve uma leitura (`equivalence.reading`) q
 
 | Leitura | Quando | O que a interface diz |
 |---|---|---|
-| `registry_references` | A equivalência vem de uma relação confirmada orientada (`relation`), ou foi declarada pela pessoa sobre um par que tem essa relação. `registry` indica o lado da chave referenciada (o cadastro); o outro lado reúne os identificadores referenciados. | Identificadores cadastrados × identificadores referenciados, com a seleção de cada lado. Uma identidade só no cadastro "não aparece como referência nesta seleção"; uma só nas referências é "referenciada sem correspondência no cadastro selecionado". Nenhuma das duas é tratada como inatividade ou erro. |
+| `registry_references` | A equivalência foi declarada (no Mapa ou na comparação) sobre um par que tem uma relação confirmada N:1 com destino único na versão comparada. `registry` indica o lado da chave referenciada (o cadastro); o outro lado reúne os identificadores referenciados. | Identificadores cadastrados × identificadores referenciados, com a seleção de cada lado. Uma identidade só no cadastro "não aparece como referência nesta seleção"; uma só nas referências é "referenciada sem correspondência no cadastro selecionado". Nenhuma das duas é tratada como inatividade ou erro. |
 | `same_field` | Os dois lados usam a mesma coluna da mesma tabela. | Duas seleções da mesma tabela, pela mesma coluna; se a atribuição isola o critério ou a versão, a interface diz isso. |
 | `unknown` | Qualquer outro caso, inclusive uma equivalência declarada sem relação confirmada. | Texto neutro sobre identidades, sem inventar o que cada lado é. |
 
 - A leitura nunca vem de nomes de tabelas ou colunas. O nome da tabela só aparece como rótulo.
 - A interface fala em identificadores e identidades distintas, nunca em pessoas, refeições ou entidades contadas por linha.
 - A execução rastreada grava a leitura com a equivalência. Ao abrir uma execução antiga, a interface usa a leitura gravada, mesmo que o Mapa tenha mudado depois; execuções gravadas antes desta leitura aparecem com o texto neutro.
+- Se a declaração de identidade usada por uma execução for retirada depois, a execução continua com a equivalência gravada e `changes.equivalence` diz que a declaração foi retirada.
 
 ## Igualdade
 

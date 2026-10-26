@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Recipes\RecipeCompiler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -140,9 +141,38 @@ class RelationshipPolicyTest extends TestCase
         $this->assertStringContainsString('versões anteriores', $relation['standing']['reason']);
         $this->assertSame(3, $relation['evidence']['join_effect']['extra_rows'], 'the new order adds one more multiplied row');
         $this->assertFalse($this->api($token, 'GET', "recipes/{$recipe['id']}")->json('data.compiled.runnable'));
+        $this->assertSame(['from' => 1, 'to' => 1], $relation['decided_versions'], 'the record keeps the versions the decision was made on');
+
+        $again = $this->api($token, 'POST', 'relationships', [
+            'from_dataset_id' => $orders['id'], 'from_column' => 'cliente_id',
+            'to_dataset_id' => $relationship['to']['dataset_id'], 'to_column' => 'id',
+        ])->assertCreated()->json('data');
+        $this->assertSame(['review', ['from' => 1, 'to' => 1]], [$again['standing']['key'], $again['decided_versions']], 'proposing the same pair again does not re-date the decision');
 
         $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm", ['policy' => 'accept_multiplicity'])->assertOk();
         $this->assertSame('caveat', $this->api($token, 'GET', "relationships/{$relationship['id']}")->json('data.standing.key'));
+    }
+
+    public function test_an_accepted_multiplicity_holds_for_the_versions_it_was_decided_on_even_when_a_side_is_pinned(): void
+    {
+        [$token, $orders, , $relationship] = $this->orders();
+        $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm", ['policy' => 'accept_multiplicity'])->assertOk();
+        $first = $orders['latest_version']['id'];
+        $this->upload($token, 'pedidos.csv', self::ORDERS."p8,c1,2\n", $orders['id'])->assertCreated();
+        $steps = [['type' => 'join', 'relationship_id' => $relationship['id'], 'join_type' => 'inner']];
+        $compiler = app(RecipeCompiler::class);
+        $workspace = $this->workspaceModel($token);
+
+        $pinned = $compiler->compile($workspace, $orders['id'], $steps, [$orders['id'] => $first]);
+        $this->assertSame(['join.multiplicity_accepted'], array_column($pinned->issues, 'code'), 'pinned to the decided versions, the caveat applies');
+
+        $latest = $compiler->compile($workspace, $orders['id'], $steps);
+        $this->assertSame(['join.relationship_needs_review'], array_column($latest->issues, 'code'));
+        $this->assertStringContainsString('não sobre pedidos versão 2 e clientes versão 1', $latest->issues[0]['message']);
+
+        $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm", ['policy' => 'accept_multiplicity'])->assertOk();
+        $old = $compiler->compile($workspace, $orders['id'], $steps, [$orders['id'] => $first]);
+        $this->assertSame(['join.relationship_needs_review'], array_column($old->issues, 'code'), 'a decision on version 2 does not cover version 1');
     }
 
     public function test_the_cadastro_join_effect_matches_the_engine_on_real_scenario_data(): void

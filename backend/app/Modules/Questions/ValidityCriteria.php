@@ -20,32 +20,32 @@ final class ValidityCriteria
         $op = $inclusive ? '≥' : '>';
 
         $stillOn = fn (string $day): string => $inclusive
-            ? " e não terminou antes de {$day}"
-            : " e terminou depois de {$day}, ou não terminou";
-        $endedBy = fn (string $day): string => $inclusive ? "terminou antes de {$day}" : "terminou até {$day}";
+            ? " e não terminaram antes de {$day}"
+            : " e terminaram depois de {$day}, ou não terminaram";
+        $endedBy = fn (string $day): string => $inclusive ? "terminaram antes de {$day}" : "terminaram até {$day}";
 
         [$enters, $leaves, $rule] = match ($reading) {
             'started' => [
-                "quem começou entre {$f} e {$t}",
-                "quem começou antes de {$f} ou depois de {$t}",
+                "linhas que começaram entre {$f} e {$t}",
+                "linhas que começaram antes de {$f} ou depois de {$t}",
                 "{$f} ≤ {$start} ≤ {$t}",
             ],
             'active_any' => $end === null ? [
-                "quem começou até {$t}",
-                "quem começou depois de {$t}",
+                "linhas que começaram até {$t}",
+                "linhas que começaram depois de {$t}",
                 "{$start} ≤ {$t}",
             ] : [
-                "quem começou até {$t}".$stillOn($f),
-                "quem começou depois de {$t} ou ".$endedBy($f),
+                "linhas que começaram até {$t}".$stillOn($f),
+                "linhas que começaram depois de {$t} ou ".$endedBy($f),
                 "{$start} ≤ {$t} e ({$end} vazio ou {$end} {$op} {$f})",
             ],
             default => $end === null ? [
-                "quem começou até {$t}",
-                "quem começou depois de {$t}",
+                "linhas que começaram até {$t}",
+                "linhas que começaram depois de {$t}",
                 "{$start} ≤ {$t}",
             ] : [
-                "quem começou até {$t}".$stillOn($t),
-                "quem começou depois de {$t} ou ".$endedBy($t),
+                "linhas que começaram até {$t}".$stillOn($t),
+                "linhas que começaram depois de {$t} ou ".$endedBy($t),
                 "{$start} ≤ {$t} e ({$end} vazio ou {$end} {$op} {$t})",
             ],
         };

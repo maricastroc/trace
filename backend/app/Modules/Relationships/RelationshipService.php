@@ -57,6 +57,10 @@ final class RelationshipService
             'to_column' => $toColumn,
         ]);
 
+        if ($relationship->exists && $relationship->status === Relationship::CONFIRMED) {
+            return $relationship;
+        }
+
         if (! $relationship->exists || $relationship->status === Relationship::REJECTED) {
             $relationship->fill([
                 'status' => Relationship::SUGGESTED,
@@ -115,7 +119,26 @@ final class RelationshipService
             'policy' => null,
             'rejected_at' => now(),
             'confirmed_at' => null,
+            'identity_declared_at' => null,
         ])->save();
+
+        return $relationship;
+    }
+
+    public function declareIdentity(Relationship $relationship): Relationship
+    {
+        if ($relationship->status === Relationship::REJECTED) {
+            throw new DomainError('relationship.identity_on_rejected', 'Esta relação foi rejeitada. Reabra a relação antes de declarar que as colunas identificam a mesma entidade.');
+        }
+
+        $relationship->fill(['identity_declared_at' => now()])->save();
+
+        return $relationship;
+    }
+
+    public function retractIdentity(Relationship $relationship): Relationship
+    {
+        $relationship->fill(['identity_declared_at' => null])->save();
 
         return $relationship;
     }

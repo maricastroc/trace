@@ -24,12 +24,12 @@ final class DatasetVersionController
         $page = Pagination::fromRequest($request, 50, 200);
         $query = DB::table('source_rows')->where('dataset_version_id', $model->id);
 
-        $column = $request->query('column');
-        if (is_string($column) && $column !== '' && $request->query->has('value')) {
+        $column = $request->input('column');
+        if (is_string($column) && $column !== '' && $request->has('value')) {
             if (! in_array($column, $model->columnKeys(), true)) {
                 throw new DomainError('dataset.column_unknown', "A coluna {$column} não existe nesta versão.");
             }
-            $value = $request->query('value');
+            $value = $request->input('value');
             $value === null || $value === ''
                 ? $query->whereRaw('("values"->>?) IS NULL', [$column])
                 : $query->whereRaw('"values" @> jsonb_build_object(?::text, ?::text)', [$column, (string) $value]);

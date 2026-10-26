@@ -7,7 +7,7 @@ final class PlainLanguage
     public static function describe(array $steps, array $inputs): array
     {
         $base = self::dataset($inputs, 0);
-        $unit = "registros de {$base}";
+        $unit = "linhas de {$base}";
         $described = [];
 
         foreach ($steps as $step) {
@@ -20,7 +20,7 @@ final class PlainLanguage
             };
 
             $unit = match ($step['type']) {
-                'join' => 'registros de '.self::dataset($inputs, $step['probe']['input']).' ligados a '.self::dataset($inputs, $step['lookup']['input']),
+                'join' => 'linhas de '.self::dataset($inputs, $step['probe']['input']).' ligadas a '.self::dataset($inputs, $step['lookup']['input']),
                 'aggregate' => 'grupos',
                 default => $unit,
             };
@@ -81,10 +81,15 @@ final class PlainLanguage
         $lookup = self::dataset($inputs, $step['lookup']['input']);
         $probeColumn = self::columnLabel($inputs, $step['probe']['input'], $step['probe']['column']);
         $lookupColumn = self::columnLabel($inputs, $step['lookup']['input'], $step['lookup']['column']);
-        $policy = $step['join_type'] === 'left' ? "quem não encontra par continua, sem {$lookup}" : 'quem não encontra par sai';
+        $policy = $step['join_type'] === 'left' ? "linhas sem par continuam, sem dados de {$lookup}" : 'linhas sem par saem';
+        $copies = match (true) {
+            ($step['direction'] ?? 'forward') === 'reverse' => "; cada linha de {$probe} pode encontrar várias em {$lookup} e virar várias linhas",
+            ($step['relationship_policy'] ?? null) !== null => "; multiplicidade aceita: um {$lookupColumn} repetido em {$lookup} cria uma cópia da linha para cada repetição",
+            default => '',
+        };
 
         return [
-            'headline' => "Liga {$probe} a {$lookup} por {$probeColumn} = {$lookupColumn}; {$policy}",
+            'headline' => "Liga {$probe} a {$lookup} por {$probeColumn} = {$lookupColumn}; {$policy}{$copies}",
             'drops' => [
                 'no_match' => "sem par em {$lookup}",
                 'null_key' => "sem {$probeColumn}",
@@ -106,11 +111,11 @@ final class PlainLanguage
         if ($distinct !== []) {
             $parts[] = ($parts === [] ? 'Conta' : 'conta').' valores diferentes de '.implode(' e ', array_map($label, $distinct));
         }
-        $by = $groups === '' ? ' em todos os registros' : " por {$groups}";
+        $by = $groups === '' ? ' em todas as linhas' : " por {$groups}";
         $headline = match (true) {
-            $parts === [] && $groups === '' => 'Conta todos os registros que chegam ao cálculo',
-            $parts === [] => "Conta os registros por {$groups}",
-            default => implode(' e ', $parts).$by.($counts === [] ? '' : ' e conta os registros'),
+            $parts === [] && $groups === '' => 'Conta todas as linhas que chegam ao cálculo',
+            $parts === [] => "Conta as linhas por {$groups}",
+            default => implode(' e ', $parts).$by.($counts === [] ? '' : ' e conta as linhas'),
         };
 
         return ['headline' => $headline, 'drops' => []];
@@ -119,7 +124,7 @@ final class PlainLanguage
     private static function keep(array $c, array $inputs): string
     {
         if (($c['kind'] ?? null) === 'validity') {
-            return 'vigência de quem '.self::validityPhrase($c);
+            return 'vigência: linhas que '.self::validityPhrase($c);
         }
 
         $column = self::column($c, $inputs);
@@ -214,6 +219,6 @@ final class PlainLanguage
 
     private static function dataset(array $inputs, int $input): string
     {
-        return mb_strtolower($inputs[$input]['dataset_name'] ?? $inputs[$input]['alias'] ?? 'registros');
+        return mb_strtolower($inputs[$input]['dataset_name'] ?? $inputs[$input]['alias'] ?? 'linhas');
     }
 }

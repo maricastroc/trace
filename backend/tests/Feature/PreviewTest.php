@@ -50,6 +50,19 @@ class PreviewTest extends TestCase
         return [$preview, $run];
     }
 
+    public function test_a_column_whose_dot_may_separate_thousands_is_not_summed(): void
+    {
+        [, $token] = $this->workspace(false);
+        $sales = $this->upload($token, 'vendas.csv', "id,valor\n1,1.234\n2,12.000\n3,567\n")->assertCreated()->json('data');
+        $steps = [['type' => 'aggregate', 'group_by' => [], 'measures' => [['function' => 'sum', 'alias' => 'vendas', 'column' => 'valor', 'name' => 'total']]]];
+
+        $preview = $this->api($token, 'POST', 'recipes/preview', ['base_dataset_id' => $sales['id'], 'steps' => $steps])->assertOk()->json('data');
+
+        $this->assertSame('blocked', $preview['reason']);
+        $this->assertSame(['aggregate.decimal_ambiguous'], array_column($preview['pending'], 'code'));
+        $this->assertNull($preview['totals'], 'no total is computed from a guess');
+    }
+
     public function test_preview_and_run_agree_on_the_meals_recipe(): void
     {
         [, $token] = $this->workspace();

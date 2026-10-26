@@ -69,7 +69,7 @@ class RecipeTest extends TestCase
             'steps' => [['type' => 'filter', 'conditions' => [['alias' => 'refeicoes', 'column' => 'quantidade', 'operator' => 'gt', 'value' => '150', 'value_type' => 'number']]]],
         ])->assertOk()->json('data');
 
-        $this->assertSame('Manter registros em que refeicoes.quantidade é maior que 150', $draft['steps'][0]['summary']);
+        $this->assertSame('Manter linhas em que refeicoes.quantidade é maior que 150', $draft['steps'][0]['summary']);
         $this->assertTrue($draft['runnable']);
         $this->assertCount(1, $this->api($token, 'GET', 'recipes')->json('data'));
     }

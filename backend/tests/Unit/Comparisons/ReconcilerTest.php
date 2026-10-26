@@ -109,6 +109,63 @@ class ReconcilerTest extends TestCase
         $this->assertSame(['rows' => 5, 'rows_with_key' => 4, 'empty_rows' => 1, 'distinct' => 2, 'repeated_identities' => 1, 'repeated_rows' => 2], $result['summary']['a']);
     }
 
+    /**
+     * @param  array<string, mixed>  $summary
+     */
+    private function assertInvariants(array $summary): void
+    {
+        $this->assertSame($summary['a']['distinct'], $summary['shared'] + $summary['shared_by_rule'] + $summary['only_a']);
+        $this->assertSame($summary['b']['distinct'], $summary['shared'] + $summary['shared_by_rule'] + $summary['only_b']);
+        $this->assertSame($summary['a']['distinct'] - $summary['b']['distinct'], $summary['net_difference']);
+        $this->assertSame($summary['only_a'] - $summary['only_b'], $summary['net_difference']);
+        $this->assertSame($summary['only_a'] + $summary['only_b'], $summary['unmatched']);
+        $this->assertSame($summary['only_a'], array_sum($summary['explanations']['only_a']));
+        $this->assertSame($summary['only_b'], array_sum($summary['explanations']['only_b']));
+        $this->assertTrue(collect($summary['checks'])->every(fn (array $check) => $check['holds']));
+    }
+
+    public function test_edge_cases_keep_every_identity_in_exactly_one_place(): void
+    {
+        $cases = [
+            'both empty' => [[], [], [0, 0, 0, 0, 0]],
+            'one side empty' => [[], ['1', '2', '2'], [0, 0, 0, 2, -2]],
+            'only blanks on one side' => [[null, ' ', ''], ['1'], [0, 0, 0, 1, -1]],
+            'equal totals, different identities' => [['1', '2', '3'], ['3', '4', '5'], [1, 0, 2, 2, 0]],
+            'very unequal' => [array_map('strval', range(1, 400)), ['7', '900'], [1, 0, 399, 1, 398]],
+        ];
+        foreach ($cases as $name => [$left, $right, $expected]) {
+            $rowId = 0;
+            $result = (new Reconciler)->reconcile($this->side($left, $rowId), $this->side($right, $rowId), [], self::NO_PERIODS, []);
+            $summary = $result['summary'];
+            $this->assertSame($expected, [$summary['shared'], $summary['shared_by_rule'], $summary['only_a'], $summary['only_b'], $summary['net_difference']], $name);
+            $this->assertInvariants($summary);
+            $this->assertCount($summary['shared'] + $summary['shared_by_rule'] + $summary['only_a'] + $summary['only_b'], $result['identities'], "{$name}: one entry per identity");
+            $this->assertSame(count(array_filter($left, fn ($v) => $v === null || trim($v) === '')), $summary['a']['empty_rows'], $name);
+        }
+    }
+
+    public function test_competing_candidates_never_make_a_pair_even_with_the_rule_accepted(): void
+    {
+        $rowId = 0;
+        $a = $this->side(['007', '08', '3', '0187'], $rowId);
+        $b = $this->side(['7', '07', '8', '0003', '187', '0187'], $rowId);
+
+        foreach ([[], ['leading_zeros']] as $rules) {
+            $result = (new Reconciler)->reconcile($a, $b, $rules, self::NO_PERIODS, []);
+            $summary = $result['summary'];
+            $this->assertInvariants($summary);
+            $byIdentity = collect($result['identities'])->groupBy('identity');
+            $this->assertSame('ambiguous_match', $byIdentity['007']->first()['explanation'], 'two candidates (7 and 07) for 007');
+            $this->assertSame(['only_b', 'variant_of_matched'], [$byIdentity['187']->first()['category'], $byIdentity['187']->first()['explanation']], '187 is a variant of 0187, which already has an exact pair');
+            $this->assertSame('shared', $byIdentity['0187']->first()['category']);
+            $paired = collect($result['identities'])->where('category', 'shared_by_rule')->pluck('b_value')->all();
+            $this->assertSame(count($paired), count(array_unique($paired)), 'no identity of B is used by two pairs');
+        }
+
+        $ruled = (new Reconciler)->reconcile($a, $b, ['leading_zeros'], self::NO_PERIODS, [])['summary'];
+        $this->assertSame([1, 2], [$ruled['shared'], $ruled['shared_by_rule']], '08 ↔ 8 and 3 ↔ 0003 are unique pairs; 007 stays ambiguous');
+    }
+
     public function test_an_inconsistent_side_is_refused_instead_of_reported(): void
     {
         $broken = new SideSet(['1' => [1], '2' => [2]], [], [], 5, [], [], []);

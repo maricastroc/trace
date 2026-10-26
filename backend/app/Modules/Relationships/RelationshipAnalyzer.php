@@ -169,11 +169,11 @@ final class RelationshipAnalyzer
         $lengthB = $to->profile['fixed_length'] ?? null;
 
         if ($a === 'date' xor $b === 'date') {
-            return ['compatible' => false, 'detail' => 'Uma coluna contém datas e a outra não.'];
+            return ['compatible' => false, 'detail' => 'Uma coluna foi lida como data e a outra não.'];
         }
 
         if ($a === $b && $a === 'identifier' && $lengthA !== null && $lengthA === $lengthB) {
-            return ['compatible' => true, 'detail' => "Ambas são identificadores textuais com {$lengthA} caracteres."];
+            return ['compatible' => true, 'detail' => "Ambas foram lidas como identificadores textuais com {$lengthA} caracteres."];
         }
 
         if ($a === $b) {

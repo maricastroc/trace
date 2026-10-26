@@ -36,6 +36,35 @@ class JoinSemanticsTest extends TestCase
         return [$token, $this->runRecipe($token, $recipe['id'])];
     }
 
+    public function test_a_reverse_join_is_flagged_and_a_suggested_one_is_not_previewed(): void
+    {
+        [, $token] = $this->workspace(false);
+        $orders = $this->upload($token, 'pedidos.csv', self::ORDERS)->json('data');
+        $clients = $this->upload($token, 'clientes.csv', "id,regiao\nc1,norte\nc2,norte\nc3,leste\n")->json('data');
+        $relationship = $this->api($token, 'POST', 'relationships', [
+            'from_dataset_id' => $orders['id'], 'from_column' => 'cliente_id',
+            'to_dataset_id' => $clients['id'], 'to_column' => 'id',
+        ])->json('data');
+        $steps = [
+            ['type' => 'join', 'relationship_id' => $relationship['id'], 'join_type' => 'inner'],
+            ['type' => 'aggregate', 'group_by' => [], 'measures' => [['function' => 'count', 'name' => 'registros']]],
+        ];
+
+        $suggested = $this->api($token, 'POST', 'recipes/preview', ['base_dataset_id' => $clients['id'], 'steps' => $steps])->assertOk()->json('data');
+        $this->assertSame('blocked', $suggested['reason'], 'pedidos.cliente_id repeats, so the reverse join is not previewed on a suggestion');
+        $this->assertFalse($suggested['pending'][0]['details']['target_unique']);
+
+        $this->api($token, 'POST', "relationships/{$relationship['id']}/confirm")->assertOk();
+        $confirmed = $this->api($token, 'POST', 'recipes/preview', ['base_dataset_id' => $clients['id'], 'steps' => $steps])->assertOk()->json('data');
+        $this->assertTrue($confirmed['computed']);
+        $this->assertSame(['join.reverse_multiplies'], array_column($confirmed['issues'], 'code'));
+        $this->assertStringContainsString('no sentido inverso, a partir de clientes', $confirmed['issues'][0]['message']);
+        $this->assertSame(5, $confirmed['totals']['values']['registros'], 'c1 and c2 are multiplied by their orders');
+
+        $forward = $this->api($token, 'POST', 'recipes/preview', ['base_dataset_id' => $orders['id'], 'steps' => $steps])->assertOk()->json('data');
+        $this->assertSame([], $forward['issues']);
+    }
+
     public function test_inner_join_with_duplicate_keys_multiplies_rows_and_lineage_proves_it(): void
     {
         [$token, $run] = $this->setUpJoin('inner');
@@ -67,7 +96,7 @@ class JoinSemanticsTest extends TestCase
         $this->assertCount(2, $p1['paths']);
         $this->assertEqualsCanonicalizing(['norte', 'sul'], array_map(fn ($p) => $p['outcome']['result_values']['regiao'], $p1['paths']));
         $this->assertSame('join.multiple_matches', $p1['diagnostics'][0]['code']);
-        $this->assertStringContainsString('multiplicado por 2', $p1['diagnostics'][0]['explanation']);
+        $this->assertStringContainsString('multiplicada por 2', $p1['diagnostics'][0]['explanation']);
 
         $norteOrders = $this->api($token, 'GET', "runs/{$run['id']}/results/{$results['norte']['result_no']}/contributors?input=0")->json('data');
         $this->assertEqualsCanonicalizing(['p1', 'p2', 'p3', 'p6', 'p7'], array_column(array_column($norteOrders, 'values'), 'id'));

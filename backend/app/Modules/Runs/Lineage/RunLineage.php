@@ -36,6 +36,9 @@ final class RunLineage
                 'stats' => $row ? json_decode($row->stats, true) : null,
                 'join' => $step['type'] === 'join' ? [
                     'relationship_id' => $step['relationship_id'],
+                    'relationship_status' => $step['relationship_status'] ?? null,
+                    'relationship_policy' => $step['relationship_policy'] ?? null,
+                    'direction' => $step['direction'] ?? null,
                     'join_type' => $step['join_type'],
                     'probe' => $step['probe'],
                     'lookup' => $step['lookup'],

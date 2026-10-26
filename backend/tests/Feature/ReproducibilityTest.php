@@ -105,6 +105,7 @@ class ReproducibilityTest extends TestCase
         $kept = $this->api($token, 'GET', "runs/{$run['id']}")->assertOk()->json('data');
         $this->assertNull($kept['recipe_id']);
         $this->assertSame('Refeições de setembro por município', $kept['recipe']['name']);
+        $this->assertSame([true, true], [$kept['recipe_deleted'], $kept['recipe_changed_since']], 'a run whose recipe was deleted no longer reads as current');
         $this->api($token, 'GET', "runs/{$run['id']}/results")->assertOk()->assertJsonPath('meta.total', 5);
     }
 }

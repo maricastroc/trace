@@ -40,6 +40,36 @@ final class CsvReader
         return $this->readString((string) file_get_contents($path));
     }
 
+    private function leavesQuoteOpen(string $record, string $delimiter): bool
+    {
+        $quoted = false;
+        $fieldStart = true;
+        $length = strlen($record);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $record[$i];
+
+            if ($quoted) {
+                if ($char === '"' && ($record[$i + 1] ?? '') === '"') {
+                    $i++;
+                } elseif ($char === '"') {
+                    $quoted = false;
+                }
+
+                continue;
+            }
+
+            if ($char === '"' && $fieldStart) {
+                $quoted = true;
+                $fieldStart = false;
+            } elseif ($char !== ' ' || $delimiter === ' ') {
+                $fieldStart = $char === $delimiter || $char === "\n" || $char === "\r";
+            }
+        }
+
+        return $quoted;
+    }
+
     public function readString(string $raw): ParsedCsv
     {
         $checksum = hash('sha256', $raw);
@@ -55,6 +85,11 @@ final class CsvReader
             throw InvalidCsv::because('binary', 'O arquivo parece ser binário e não um CSV de texto.');
         }
 
+        $oldMacLines = ! str_contains($content, "\n") && str_contains($content, "\r");
+        if ($oldMacLines) {
+            $content = str_replace("\r", "\n", $content);
+        }
+
         $delimiter = $this->detectDelimiter($content);
         $warnings = [];
         $stream = fopen('php://temp', 'r+');
@@ -68,14 +103,24 @@ final class CsvReader
         $raggedLines = [];
         $raggedTotal = 0;
         $trimmedCells = 0;
+        $separatorOnly = 0;
 
         while (($fields = fgetcsv($stream, null, $delimiter, '"', '')) !== false) {
             $startLine = $line;
             $position = ftell($stream);
-            $line += substr_count($content, "\n", $offset, $position - $offset);
+            $breaks = substr_count($content, "\n", $offset, $position - $offset);
+            if ($breaks > 1 && $this->leavesQuoteOpen(substr($content, $offset, $position - $offset), $delimiter)) {
+                fclose($stream);
+                throw InvalidCsv::because('unclosed_quote', "A linha {$startLine} abre aspas que não são fechadas: o resto do arquivo seria lido como uma única célula. Feche as aspas ou remova-as e envie de novo.", ['line' => $startLine]);
+            }
+            $line += $breaks;
             $offset = $position;
 
             if ($fields === [null] || $this->isBlank($fields)) {
+                if ($labels !== null && count($fields) > 1) {
+                    $separatorOnly++;
+                }
+
                 continue;
             }
 
@@ -131,8 +176,21 @@ final class CsvReader
             throw InvalidCsv::because('no_rows', 'O arquivo contém apenas o cabeçalho, sem registros.');
         }
 
+        if ($oldMacLines) {
+            $warnings[] = ['code' => 'line_endings_converted', 'message' => 'As linhas do arquivo terminavam só com retorno de carro (formato antigo do Mac) e foram lidas como quebras de linha.'];
+        }
+
+        if ($separatorOnly > 0) {
+            $warnings[] = ['code' => 'separator_rows_skipped', 'message' => "{$separatorOnly} ".($separatorOnly === 1 ? 'linha tinha' : 'linhas tinham').' só separadores, sem nenhum valor, e '.($separatorOnly === 1 ? 'foi ignorada' : 'foram ignoradas').'.', 'count' => $separatorOnly];
+        }
+
         if ($encoding !== 'UTF-8') {
             $warnings[] = ['code' => 'encoding_converted', 'message' => "Codificação {$encoding} convertida para UTF-8."];
+        }
+
+        $dataLike = array_keys(array_filter($labels, fn (string $label) => ValueParser::number($label) !== null || ValueParser::date($label) !== null || preg_match('/^[\d.\/-]{6,}$/', $label) === 1));
+        if ($dataLike !== []) {
+            $warnings[] = ['code' => 'header_looks_like_data', 'message' => 'Na primeira linha, '.(count($dataLike) === 1 ? 'a coluna '.($dataLike[0] + 1).' tem um nome que parece um dado' : 'as colunas '.implode(', ', array_map(fn (int $i) => $i + 1, $dataLike)).' têm nomes que parecem dados').' (número ou data). Se o arquivo não tem cabeçalho, o primeiro registro virou nome de coluna e ficou fora da contagem: acrescente uma linha com os nomes das colunas.', 'positions' => array_map(fn (int $i) => $i + 1, $dataLike)];
         }
 
         if ($trimmedCells > 0) {
@@ -205,6 +263,9 @@ final class CsvReader
         foreach ($labels as $index => $label) {
             if ($label === '') {
                 throw InvalidCsv::because('empty_header', 'Há uma coluna sem nome no cabeçalho.', ['position' => $index + 1]);
+            }
+            if (mb_strlen($label) > 120) {
+                throw InvalidCsv::because('header_too_long', 'O nome da coluna '.($index + 1).' tem mais de 120 caracteres. Verifique se a primeira linha do arquivo é mesmo o cabeçalho.', ['position' => $index + 1]);
             }
             $normalized = mb_strtolower($label);
             if (isset($seen[$normalized])) {

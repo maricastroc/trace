@@ -90,4 +90,27 @@ class PaginationTest extends TestCase
         $this->assertEmpty(array_intersect(array_column($first['paths'], 'tuple_no'), array_column($second['paths'], 'tuple_no')));
         $this->assertStringContainsString('6 chegaram ao resultado', $first['summary']);
     }
+
+    public function test_a_huge_page_number_is_answered_without_overflowing(): void
+    {
+        [, $token] = $this->workspace(true);
+        $dataset = collect($this->api($token, 'GET', 'datasets')->json('data'))->first();
+
+        $this->api($token, 'GET', "dataset-versions/{$dataset['latest_version']['id']}/rows?page=99999999999999999999")->assertOk()->assertJsonPath('data', []);
+    }
+
+    public function test_searches_by_value_can_travel_in_the_request_body(): void
+    {
+        [, $token] = $this->workspace(true);
+        $dataset = collect($this->api($token, 'GET', 'datasets')->json('data'))->first();
+        $version = $dataset['latest_version']['id'];
+        $first = $this->api($token, 'GET', "dataset-versions/{$version}/rows?per_page=1")->json('data.0.values');
+        $column = array_key_first($first);
+
+        $byBody = $this->api($token, 'POST', "dataset-versions/{$version}/rows/search", ['column' => $column, 'value' => $first[$column], 'per_page' => 5])->assertOk()->json();
+        $byQuery = $this->api($token, 'GET', "dataset-versions/{$version}/rows?column={$column}&value=".urlencode((string) $first[$column]).'&per_page=5')->assertOk()->json();
+
+        $this->assertSame($byQuery, $byBody);
+        $this->assertGreaterThan(0, $byBody['meta']['total']);
+    }
 }

@@ -33,6 +33,7 @@ return [
     'connections' => [
 
         'sqlite' => [
+            'mask_bindings_in_exception_messages' => true,
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
@@ -85,6 +86,7 @@ return [
         ],
 
         'pgsql' => [
+            'mask_bindings_in_exception_messages' => true,
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),

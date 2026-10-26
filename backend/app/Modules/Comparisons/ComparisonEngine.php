@@ -66,14 +66,20 @@ final class ComparisonEngine
                 $caveats[] = $this->caveat('comparison.empty_identifiers', $side, "Lado {$name}: {$counts['empty_rows']} linhas sem identificador ficam fora da comparação de identidades.");
             }
             $copies = 0;
+            $cutAfterCopies = false;
             foreach ($steps[$side] as $step) {
                 $stats = $step['stats'] ?? [];
                 if (($step['type'] ?? null) === 'join') {
                     $copies += max(0, ($stats['created_tuples'] ?? 0) - ($stats['matched_tuples'] ?? 0));
                 }
+                if (($step['type'] ?? null) === 'filter' && $copies > 0) {
+                    $cutAfterCopies = true;
+                }
             }
             if ($copies > 0) {
-                $caveats[] = $this->caveat('comparison.join_copies', $side, "Lado {$name}: uma ligação copiou {$copies} linhas porque o destino repete ids. Isso muda contagens de linhas, não as identidades distintas.");
+                $caveats[] = $this->caveat('comparison.join_copies', $side, $cutAfterCopies
+                    ? "Lado {$name}: uma ligação copiou {$copies} linhas porque o destino repete ids. A comparação usa cada linha de origem uma vez, mas a linha entra no lado se qualquer uma das cópias passar pelo recorte: ela pode entrar por um valor que só uma das cópias tem."
+                    : "Lado {$name}: uma ligação copiou {$copies} linhas porque o destino repete ids. A comparação usa cada linha de origem uma vez, então as cópias não mudam as contagens deste lado.");
             }
         }
 

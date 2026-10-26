@@ -57,7 +57,7 @@ final class CompiledRecipe
     public function snapshot(?Recipe $recipe): array
     {
         return [
-            'recipe' => $recipe === null ? null : ['id' => $recipe->id, 'name' => $recipe->name, 'revision' => $recipe->revision],
+            'recipe' => $recipe === null ? null : ['id' => $recipe->id, 'name' => $recipe->name, 'revision' => $recipe->revision, 'question' => $recipe->question],
             'base_dataset_id' => $this->baseDatasetId,
             'inputs' => $this->inputs,
             'steps' => $this->steps,

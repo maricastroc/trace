@@ -135,7 +135,7 @@ class QuestionEngineTest extends TestCase
         $this->assertSame('filter.validity_out', $exclusions['p2'][0]);
         $this->assertStringContainsString('terminou durante o período', $exclusions['p2'][1]);
         $this->assertStringContainsString('começou depois de 31/12/2025', $exclusions['p4'][1]);
-        $this->assertStringContainsString('terminou antes de 01/01/2025', $exclusions['p5'][1]);
+        $this->assertStringContainsString('terminou até 01/01/2025, e o dia do fim não conta como vigente', $exclusions['p5'][1]);
         $this->assertSame('filter.validity_undetermined', $exclusions['p6'][0]);
         $this->assertStringContainsString('sem data de início', $exclusions['p6'][1]);
         $this->assertStringContainsString('fim é anterior à de início', $exclusions['p7'][1]);

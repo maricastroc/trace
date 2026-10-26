@@ -4,6 +4,7 @@ namespace App\Modules\Comparisons;
 
 use App\Modules\Datasets\Dataset;
 use App\Modules\Questions\QuestionTranslator;
+use App\Modules\Recipes\Decisions;
 use App\Modules\Recipes\RecipeCompiler;
 use App\Modules\Runs\Run;
 use App\Modules\Support\Canonical;
@@ -64,6 +65,10 @@ final class ComparisonPlanner
             ->where(fn ($query) => $query
                 ->where(fn ($q) => $q->where('from_dataset_id', $a->dataset->id)->where('from_column', $a->key)->where('to_dataset_id', $b->dataset->id)->where('to_column', $b->key))
                 ->orWhere(fn ($q) => $q->where('from_dataset_id', $b->dataset->id)->where('from_column', $b->key)->where('to_dataset_id', $a->dataset->id)->where('to_column', $a->key)))
+            ->orderByRaw("CASE WHEN identity_declared_at IS NOT NULL AND status <> 'rejected' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE status WHEN 'confirmed' THEN 0 WHEN 'suggested' THEN 1 ELSE 2 END")
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->first();
 
         $equivalence = Equivalence::of($a, $b, $relationship, $declared);
@@ -145,7 +150,7 @@ final class ComparisonPlanner
             return null;
         }
         if ($translated->needsReading) {
-            $this->issue('error', 'comparison.reading_required', "Lado {$this->name($side)}: escolha a leitura da vigência (começaram, ativos em algum momento ou ativos no último dia).", $side, "{$path}.period.reading");
+            $this->issue('error', 'comparison.reading_required', "Lado {$this->name($side)}: escolha a leitura da vigência (começaram, estiveram vigentes em algum momento ou estavam vigentes no último dia).", $side, "{$path}.period.reading");
 
             return null;
         }
@@ -206,6 +211,10 @@ final class ComparisonPlanner
         }
 
         $definition = ['kind' => 'run', 'label' => $this->label($raw, $input['alias']), 'run_id' => $run->id, 'key' => $key];
+        $changes = Decisions::changes($workspace, Decisions::of($run->steps(), $run->inputs()));
+        if ($changes !== []) {
+            $this->issue('warning', 'comparison.run_decisions_changed', "Lado {$this->name($side)}: a execução escolhida foi calculada com decisões que mudaram depois. ".implode(' ', array_column($changes, 'message')).' A execução continua com o resultado que gravou; para usar as decisões atuais, compare a população em vez da execução.', $side, "{$path}.run_id", ['changes' => $changes]);
+        }
 
         return new SidePlan($side, $definition, $dataset, $version, $version->id, $key, $column->inferred_type, null, $run, $dataset->validity(), $fields);
     }

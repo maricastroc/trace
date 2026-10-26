@@ -9,7 +9,7 @@ final class Equivalence
 {
     public const SAME_FIELD = 'same_field';
 
-    public const RELATION = 'relation';
+    public const MAP_DECLARED = 'map_declared';
 
     public const DECLARED = 'declared';
 
@@ -37,15 +37,15 @@ final class Equivalence
                 self::SAME_FIELD,
                 "Os dois lados usam a mesma coluna, {$fieldA['name']}. A correspondência vem da própria definição.",
             ],
-            $link['gap'] === null => [
-                self::RELATION,
-                "A relação {$route} foi confirmada no Mapa: cada valor de {$link['from']} aponta para um único registro de {$link['table']} pela coluna {$link['to']}, que não se repete. Os dois lados usam, portanto, os mesmos identificadores.",
+            $relationship !== null && $relationship->identityDeclared() => [
+                self::MAP_DECLARED,
+                "No Mapa, você declarou que {$fieldA['name']} e {$fieldB['name']} identificam a mesma entidade (relação {$route}). O Trace não verificou essa equivalência.",
             ],
             self::matches($declared, $a, $b) => [
                 self::DECLARED,
                 "Você declarou que {$fieldA['name']} e {$fieldB['name']} identificam a mesma entidade. O Trace não verificou essa equivalência.",
             ],
-            default => [self::UNCONFIRMED, self::gapStatement($link, $route, $standing, $fieldA['name'], $fieldB['name'])],
+            default => [self::UNCONFIRMED, self::gapStatement($link, $route, $fieldA['name'], $fieldB['name'])],
         };
 
         return [
@@ -104,7 +104,6 @@ final class Equivalence
             $relationship->policy === Relationship::ACCEPT_MULTIPLICITY => 'multiplicity',
             ! self::unique($target) => 'target_repeats',
             $standing !== RelationshipStanding::CONFIRMED => 'review',
-            self::unique($source) => 'one_to_one',
             default => null,
         };
 
@@ -114,12 +113,15 @@ final class Equivalence
     /**
      * @param  array{gap: string|null, from: string|null, to: string|null}  $link
      */
-    private static function gapStatement(array $link, ?string $route, ?string $standing, string $a, string $b): string
+    /**
+     * @param  array{gap: string|null, from: string|null, to: string|null}  $link
+     */
+    private static function gapStatement(array $link, ?string $route, string $a, string $b): string
     {
         return match ($link['gap']) {
-            'multiplicity', 'target_repeats' => "A relação {$route} está confirmada no Mapa, mas {$link['to']} tem valores repetidos: ela não identifica um registro único. A relação não basta para dizer que {$a} e {$b} identificam a mesma entidade.",
-            'one_to_one' => "A relação {$route} está confirmada no Mapa, mas {$link['from']} também não se repete: uma relação um para um pode ligar entidades diferentes. Confirme se {$a} e {$b} identificam a mesma entidade.",
-            'review' => "A relação {$route} está em revisão no Mapa. Enquanto isso, ela não basta para dizer que {$a} e {$b} identificam a mesma entidade.",
+            null => "A relação {$route} está confirmada no Mapa: cada valor de {$link['from']} que encontra par aponta para uma única linha pela coluna {$link['to']}. Isso autoriza usar a relação para ligar tabelas, mas não declara que {$a} e {$b} identificam a mesma entidade.",
+            'multiplicity', 'target_repeats' => "A relação {$route} está confirmada no Mapa, mas {$link['to']} tem valores repetidos: ela não aponta para um registro único. A relação não basta para dizer que {$a} e {$b} identificam a mesma entidade.",
+            'review' => "A relação {$route} está em revisão no Mapa. Ela não basta para dizer que {$a} e {$b} identificam a mesma entidade.",
             'rejected' => "A relação {$route} foi rejeitada no Mapa. Confirme só se os valores de {$a} e {$b} identificam a mesma entidade.",
             'suggested' => "A relação {$route} do Mapa sugere estas colunas, mas ninguém confirmou que os valores identificam a mesma entidade.",
             default => "Nenhuma evidência liga {$a} a {$b}. Confirme que os valores identificam a mesma entidade.",
@@ -135,7 +137,7 @@ final class Equivalence
         if ($status === self::SAME_FIELD) {
             return ['kind' => self::READING_SAME_FIELD, 'registry' => null, 'entity' => ['dataset' => $a->dataset->key, 'name' => $a->dataset->name], 'key_unique' => self::unique($a)];
         }
-        if ($link['registry'] !== null && in_array($link['gap'], [null, 'one_to_one'], true) && in_array($status, [self::RELATION, self::DECLARED], true)) {
+        if ($link['registry'] !== null && $link['gap'] === null && in_array($status, [self::MAP_DECLARED, self::DECLARED], true)) {
             return ['kind' => self::READING_REGISTRY, 'registry' => $link['registry'], 'entity' => $link['entity'], 'key_unique' => true];
         }
 

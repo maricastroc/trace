@@ -14,5 +14,7 @@ Melhorias identificadas durante a validação do motor (etapa 4) e deixadas para
 
 ## Dados
 
-- **Separador decimal configurável.** Números são aceitos apenas com ponto (`12.5`). Valores como `12,5` são tratados como não numéricos e aparecem nos diagnósticos.
+- **Separador decimal configurável.** Números são aceitos apenas com ponto (`12.5`). Valores como `12,5` ou `1.234,56` deixam a coluna como texto, e o perfil da coluna diz o motivo. Uma coluna em que todo ponto tem três casas depois (`1.234`, `12.000`) é ambígua: o Trace não escolhe entre milhar e decimal, deixa a coluna como texto (`decimal_ambiguous`) e recusa somá-la. Declarar o formato na importação resolveria os dois casos.
+- **Apagar dados pessoais usados em execuções.** Um conjunto usado numa execução não pode ser apagado, e não há rota para apagar uma execução ou uma versão. Hoje a única forma de apagar é a limpeza do espaço após 30 dias sem uso.
+- **Importação em segundo plano.** Arquivos perto do limite são lidos inteiros na memória, dentro da requisição. Ler em fluxo e importar pela fila evitaria o limite de memória e de tempo.
 - **Atribuição de exclusões anteriores ao agrupamento.** Registros excluídos antes de as colunas de agrupamento estarem disponíveis aparecem como "não atribuíveis". Atribuí-los exigiria uma junção hipotética, que o motor não faz por decisão de projeto.

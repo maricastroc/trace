@@ -32,18 +32,12 @@ final class StepDescriber
     public static function describe(array $step): string
     {
         return match ($step['type']) {
-            'filter' => 'Manter registros em que '.implode(' e ', array_map(fn (array $c) => self::condition($c), $step['conditions'])),
+            'filter' => 'Manter linhas em que '.implode(' e ', array_map(fn (array $c) => self::condition($c), $step['conditions'])),
             'join' => self::join($step),
             'aggregate' => self::aggregate($step),
             default => '',
         };
     }
-
-    public const READINGS = [
-        'started' => 'começou',
-        'active_any' => 'esteve vigente em algum momento',
-        'active_at_end' => 'estava vigente no último dia',
-    ];
 
     public static function condition(array $condition): string
     {
@@ -64,13 +58,21 @@ final class StepDescriber
 
     public static function validity(array $condition): string
     {
-        $reading = self::READINGS[$condition['reading']] ?? $condition['reading'];
-        $period = self::date($condition['from']).' a '.self::date($condition['to']);
+        $from = self::date($condition['from']);
+        $to = self::date($condition['to']);
         $columns = isset($condition['start_column'])
-            ? ' (vigência por '.$condition['start_column'].($condition['end_column'] ? ' → '.$condition['end_column'] : ', sem coluna de fim').')'
+            ? ' (vigência por '.$condition['start_column'].($condition['end_column']
+                ? ' → '.$condition['end_column'].', fim '.(($condition['end_inclusive'] ?? true) ? 'incluído' : 'excluído')
+                : ', sem coluna de fim').')'
             : '';
 
-        return "o registro de {$condition['alias']} {$reading} entre {$period}{$columns}";
+        $reading = match ($condition['reading']) {
+            'started' => "começou entre {$from} e {$to}",
+            'active_any' => "esteve vigente em algum dia entre {$from} e {$to}",
+            default => "estava vigente em {$to}",
+        };
+
+        return "a linha de {$condition['alias']} {$reading}{$columns}";
     }
 
     public static function date(string $iso): string
@@ -89,22 +91,28 @@ final class StepDescriber
 
     private static function join(array $step): string
     {
-        $type = $step['join_type'] === 'left' ? 'mantendo registros sem correspondência' : 'somente registros com correspondência';
+        $type = $step['join_type'] === 'left' ? 'mantendo linhas sem correspondência' : 'somente linhas com correspondência';
         $probe = $step['probe'];
         $lookup = $step['lookup'];
 
-        return "Relacionar {$probe['alias']} com {$lookup['alias']} por {$probe['alias']}.{$probe['column']} = {$lookup['alias']}.{$lookup['column']} ({$type})";
+        $copies = match (true) {
+            ($step['direction'] ?? 'forward') === 'reverse' => ' · sentido inverso: uma linha pode virar várias',
+            ($step['relationship_policy'] ?? null) !== null => ' · multiplicidade aceita: ids repetidos criam cópias',
+            default => '',
+        };
+
+        return "Relacionar {$probe['alias']} com {$lookup['alias']} por {$probe['alias']}.{$probe['column']} = {$lookup['alias']}.{$lookup['column']} ({$type}){$copies}";
     }
 
     private static function aggregate(array $step): string
     {
         $groups = implode(', ', array_map(fn (array $g) => "{$g['alias']}.{$g['column']}", $step['group_by']));
         $measures = implode(' · ', array_map(fn (array $m) => match ($m['function']) {
-            'count' => "contar registros como {$m['name']}",
+            'count' => "contar linhas como {$m['name']}",
             'count_distinct' => "contar valores diferentes de {$m['alias']}.{$m['column']} como {$m['name']}",
             default => "somar {$m['alias']}.{$m['column']} como {$m['name']}",
         }, $step['measures']));
 
-        return $groups === '' ? "Calcular sobre todos os registros · {$measures}" : "Agrupar por {$groups} · {$measures}";
+        return $groups === '' ? "Calcular sobre todas as linhas · {$measures}" : "Agrupar por {$groups} · {$measures}";
     }
 }

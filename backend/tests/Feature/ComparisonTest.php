@@ -384,6 +384,19 @@ class ComparisonTest extends TestCase
         $identity = $this->api($token, 'GET', "comparison-runs/{$run['id']}/identities?category=only_a&per_page=1")->json('data.0');
         $this->assertSame('filter.validity_out', $identity['detail']['by'][0]['code']);
         $this->assertSame($active, $run['sides']['a']['run_id'], 'run sides reuse the traced runs');
+        $this->assertSame([[], []], [$run['changes']['a'], $run['changes']['b']]);
+
+        $this->api($token, 'PUT', "datasets/{$ds['beneficiarios']['id']}/validity", ['start_column' => 'data_cadastro', 'end_column' => 'data_desligamento', 'end_inclusive' => false])->assertOk();
+        $now = $this->preview($token, ['a' => ['kind' => 'run', 'run_id' => $active, 'key' => 'id'], 'b' => ['kind' => 'run', 'run_id' => $started, 'key' => 'id']]);
+        $warning = collect($now['issues'])->firstWhere('code', 'comparison.run_decisions_changed');
+        $this->assertNotNull($warning, 'a run side calculated with older decisions is flagged');
+        $this->assertStringContainsString('data_cadastro → data_desligamento (fim incluído)', $warning['message']);
+        $this->assertStringContainsString('agora é data_cadastro → data_desligamento (fim excluído)', $warning['message']);
+        $this->assertEquals($run['summary'], $now['summary'], 'the runs keep the numbers they recorded');
+
+        $reopened = $this->api($token, 'GET', "comparison-runs/{$run['id']}")->assertOk()->json('data');
+        $this->assertStringContainsString('fim excluído', $reopened['changes']['a'][0]['message']);
+        $this->assertSame($run['summary'], $reopened['summary']);
     }
 
     public function test_comparing_fields_needs_evidence_or_an_explicit_declaration_that_is_kept_with_the_trace(): void
@@ -436,13 +449,25 @@ class ComparisonTest extends TestCase
 
         $byKitchen = collect($this->api($token, 'GET', 'relationships')->json('data'))->first(fn (array $r) => $r['from']['dataset_key'] === 'atendimentos' && $r['from']['column'] === 'cozinha_id');
         $this->api($token, 'POST', "relationships/{$byKitchen['id']}/confirm")->assertOk();
-        $confirmed = $this->preview($token, ['a' => $this->population($ds['cozinhas'], 'id'), 'b' => $this->population($ds['atendimentos'], 'cozinha_id')]);
-        $this->assertSame(['relation', $byKitchen['id'], []], [$confirmed['equivalence']['status'], $confirmed['equivalence']['relationship_id'], $confirmed['pending']]);
-        $this->assertStringContainsString('cada valor de atendimentos.cozinha_id aponta para um único registro de cozinhas', $confirmed['equivalence']['statement']);
-        $this->assertSame(['registry_references', 'a', 'cozinhas'], [$confirmed['equivalence']['reading']['kind'], $confirmed['equivalence']['reading']['registry'], $confirmed['equivalence']['reading']['entity']['dataset']]);
+        $kitchenSpec = ['a' => $this->population($ds['cozinhas'], 'id'), 'b' => $this->population($ds['atendimentos'], 'cozinha_id')];
+        $confirmed = $this->preview($token, $kitchenSpec);
+        $this->assertSame(['unconfirmed', $byKitchen['id'], 'confirmed'], [$confirmed['equivalence']['status'], $confirmed['equivalence']['relationship_id'], $confirmed['equivalence']['relationship_standing']]);
+        $this->assertStringContainsString('autoriza usar a relação para ligar tabelas, mas não declara', $confirmed['equivalence']['statement'], 'a many-to-one join alone is not an identity');
+        $this->assertSame('unknown', $confirmed['equivalence']['reading']['kind']);
+
+        $this->api($token, 'POST', "relationships/{$byKitchen['id']}/identity")->assertOk()->assertJsonPath('data.status', 'confirmed');
+        $declared = $this->preview($token, $kitchenSpec);
+        $this->assertSame(['map_declared', []], [$declared['equivalence']['status'], $declared['pending']]);
+        $this->assertStringContainsString('No Mapa, você declarou que cozinhas.id e atendimentos.cozinha_id identificam a mesma entidade', $declared['equivalence']['statement']);
+        $this->assertSame(['registry_references', 'a', 'cozinhas'], [$declared['equivalence']['reading']['kind'], $declared['equivalence']['reading']['registry'], $declared['equivalence']['reading']['entity']['dataset']]);
+        $this->assertEquals($confirmed['summary'], $declared['summary']);
+
+        $this->api($token, 'POST', "relationships/{$byKitchen['id']}/reject")->assertOk()->assertJsonPath('data.identity_declared_at', null);
+        $this->assertSame('unconfirmed', $this->preview($token, $kitchenSpec)['equivalence']['status'], 'rejecting the relation withdraws its identity declaration');
+        $this->api($token, 'POST', "relationships/{$byKitchen['id']}/identity")->assertStatus(422)->assertJsonPath('code', 'relationship.identity_on_rejected');
     }
 
-    public function test_a_confirmed_reference_reads_as_registry_against_references_and_a_trace_keeps_the_reading_it_had(): void
+    public function test_a_declared_reference_reads_as_registry_against_references_and_a_trace_keeps_the_reading_it_had(): void
     {
         [, $token] = $this->workspace(true, 'refeicoes');
         $ds = $this->datasets($token);
@@ -454,8 +479,10 @@ class ComparisonTest extends TestCase
         $this->assertSame(['unconfirmed', 'unknown'], [$suggested['equivalence']['status'], $suggested['equivalence']['reading']['kind']], 'a suggested relation is not characterized enough');
 
         $this->api($token, 'POST', "relationships/{$relation['id']}/confirm")->assertOk();
+        $this->assertSame('unconfirmed', $this->preview($token, $spec)['equivalence']['status'], 'confirming the join does not declare the identity');
+        $this->api($token, 'POST', "relationships/{$relation['id']}/identity")->assertOk();
         $preview = $this->preview($token, $spec);
-        $this->assertSame(['relation', []], [$preview['equivalence']['status'], $preview['pending']]);
+        $this->assertSame(['map_declared', []], [$preview['equivalence']['status'], $preview['pending']]);
         $this->assertSame(['kind' => 'registry_references', 'registry' => 'a', 'entity' => ['dataset' => 'cozinhas', 'name' => $ds['cozinhas']['name']], 'key_unique' => true], $preview['equivalence']['reading']);
 
         $kitchens = $this->rows($ds['cozinhas']['latest_version']['id'])->pluck('id');
@@ -466,13 +493,14 @@ class ComparisonTest extends TestCase
         $this->assertGreaterThan($summary['b']['distinct'], $summary['b']['rows'], 'referenced identifiers are not meals');
 
         $run = $this->trace($token, $spec);
-        $this->assertSame(['relation', 'registry_references'], [$run['equivalence']['status'], $run['equivalence']['reading']['kind']]);
+        $this->assertSame(['map_declared', 'registry_references'], [$run['equivalence']['status'], $run['equivalence']['reading']['kind']]);
 
-        $this->api($token, 'POST', "relationships/{$relation['id']}/reopen")->assertOk();
+        $this->api($token, 'DELETE', "relationships/{$relation['id']}/identity")->assertOk()->assertJsonPath('data.identity_declared_at', null);
         $now = $this->preview($token, $spec);
         $this->assertSame(['unconfirmed', 'unknown'], [$now['equivalence']['status'], $now['equivalence']['reading']['kind']]);
-        $kept = $this->api($token, 'GET', "comparison-runs/{$run['id']}")->json('data.equivalence');
-        $this->assertSame(['relation', 'registry_references', 'a'], [$kept['status'], $kept['reading']['kind'], $kept['reading']['registry']], 'a traced run keeps the reading it was traced with');
+        $kept = $this->api($token, 'GET', "comparison-runs/{$run['id']}")->json('data');
+        $this->assertSame(['map_declared', 'registry_references', 'a'], [$kept['equivalence']['status'], $kept['equivalence']['reading']['kind'], $kept['equivalence']['reading']['registry']], 'a traced run keeps the reading it was traced with');
+        $this->assertStringContainsString('Essa declaração foi retirada depois', $kept['changes']['equivalence'], 'the run says the declaration it used is no longer in force');
     }
 
     public function test_a_confirmed_relation_alone_does_not_make_two_columns_the_same_identity(): void
@@ -484,7 +512,7 @@ class ComparisonTest extends TestCase
         $this->api($token, 'POST', "relationships/{$oneToOne['id']}/confirm")->assertOk();
         $preview = $this->preview($token, ['a' => $this->population($ds['cozinhas'], 'id'), 'b' => $this->population($ds['atendimentos'], 'id')]);
         $this->assertSame(['unconfirmed', $oneToOne['id'], 'confirmed'], [$preview['equivalence']['status'], $preview['equivalence']['relationship_id'], $preview['equivalence']['relationship_standing']]);
-        $this->assertStringContainsString('uma relação um para um pode ligar entidades diferentes', $preview['equivalence']['statement']);
+        $this->assertStringContainsString('não declara que cozinhas.id e atendimentos.id identificam a mesma entidade', $preview['equivalence']['statement']);
         $this->assertSame(['comparison.equivalence_unconfirmed'], array_column($preview['pending'], 'code'));
 
         $served = collect($this->api($token, 'GET', 'relationships')->json('data'))->first(fn (array $r) => $r['from']['dataset_key'] === 'atendimentos' && $r['from']['column'] === 'beneficiario_id');

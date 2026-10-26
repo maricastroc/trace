@@ -2,6 +2,7 @@
 
 namespace App\Modules\Workspaces\Http;
 
+use App\Modules\Support\UploadLimit;
 use App\Modules\Workspaces\DemoScenarios;
 use App\Modules\Workspaces\Workspace;
 use App\Modules\Workspaces\WorkspaceProvisioner;
@@ -19,7 +20,7 @@ final class WorkspaceController
             'mode' => config('trace.mode'),
             'uploads_enabled' => (bool) config('trace.uploads_enabled'),
             'limits' => [
-                'upload_kb' => (int) config('trace.limits.upload_kb'),
+                'upload_kb' => UploadLimit::kilobytes(),
                 'rows' => (int) config('trace.limits.rows'),
                 'columns' => (int) config('trace.limits.columns'),
                 'tuples' => (int) config('trace.limits.tuples'),

@@ -2,15 +2,58 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Datasets\DatasetVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 use Tests\TestCase;
 
 class ImportTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_a_failed_import_leaves_no_file_behind_and_answers_without_internal_details(): void
+    {
+        Storage::fake('local');
+        [, $token] = $this->workspace(false);
+        DatasetVersion::creating(function (): void {
+            throw new RuntimeException('falha interna com 12345678900');
+        });
+
+        $response = $this->upload($token, 'pessoas.csv', "nome,documento\nAna,12345678900\n")->assertStatus(500);
+
+        $this->assertSame('server_error', $response->json('code'));
+        $this->assertStringNotContainsString('12345678900', $response->getContent(), 'no value of the file reaches the response');
+        $this->assertSame([], Storage::disk('local')->allFiles(), 'the raw file is removed with the rolled back version');
+        $this->assertSame(0, DB::table('datasets')->count());
+    }
+
+    public function test_a_header_name_that_is_too_long_is_refused_by_position(): void
+    {
+        [, $token] = $this->workspace(false);
+        $label = str_repeat('Ana Maria da Silva ', 10);
+
+        $response = $this->upload($token, 'pessoas.csv', "id,{$label}\n1,x\n")->assertStatus(422);
+
+        $this->assertSame('csv.header_too_long', $response->json('code'));
+        $this->assertSame(2, $response->json('details.position'));
+        $this->assertStringNotContainsString('Ana Maria', $response->getContent());
+    }
+
+    public function test_a_first_row_that_looks_like_data_is_flagged(): void
+    {
+        [, $token] = $this->workspace(false);
+
+        $dataset = $this->upload($token, 'sem_cabecalho.csv', "Ana,12345678900,2024-01-02\nBia,98765432100,2024-02-03\n")->assertCreated()->json('data');
+        $version = $this->api($token, 'GET', "dataset-versions/{$dataset['latest_version']['id']}")->assertOk()->json('data');
+        $warning = collect($version['import_report']['warnings'])->firstWhere('code', 'header_looks_like_data');
+
+        $this->assertNotNull($warning);
+        $this->assertSame([2, 3], $warning['positions']);
+        $this->assertStringNotContainsString('12345678900', $warning['message']);
+    }
 
     public function test_upload_persists_version_columns_rows_and_original_file(): void
     {

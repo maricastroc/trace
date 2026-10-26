@@ -6,7 +6,6 @@ use App\Modules\Datasets\Dataset;
 use App\Modules\Datasets\DatasetVersion;
 use App\Modules\Datasets\Import\ValueParser;
 use App\Modules\Relationships\Relationship;
-use App\Modules\Relationships\RelationshipStanding;
 use App\Modules\Runs\Engine\ValidityRule;
 use App\Modules\Support\Identifier;
 use App\Modules\Workspaces\Workspace;
@@ -27,6 +26,12 @@ final class RecipeCompiler
 
     private array $versions = [];
 
+    /** @var array<int, array<string, bool>> */
+    private array $uniqueColumns = [];
+
+    /** @var array<int, array<string, string>> */
+    private array $textNumbers = [];
+
     /** @var array<int, Dataset> */
     private array $datasets = [];
 
@@ -41,6 +46,8 @@ final class RecipeCompiler
         $this->issues = [];
         $this->inputs = [];
         $this->versions = [];
+        $this->uniqueColumns = [];
+        $this->textNumbers = [];
         $this->datasets = [];
         $this->pinned = $pinnedVersions;
 
@@ -383,9 +390,16 @@ final class RecipeCompiler
             }
         }
 
+        $direction = $fromIn !== null ? 'forward' : 'reverse';
+        $lookupUnique = $this->uniqueColumns[$lookupInput['position']][$lookupColumn] ?? false;
+        $route = "{$relationship->fromDataset->key}.{$relationship->from_column} → {$relationship->toDataset->key}.{$relationship->to_column}";
+
         if ($relationship->status === Relationship::SUGGESTED) {
-            $targetUnique = ($relationship->toDataset->latestVersion?->column($relationship->to_column)?->profile['unique'] ?? false) === true;
-            $this->issue('blocker', 'join.relationship_unconfirmed', "O relacionamento {$probeInput['alias']}.{$probeColumn} → {$lookupInput['alias']}.{$lookupColumn} ainda não foi confirmado.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id, 'target_unique' => $targetUnique]);
+            $this->issue('blocker', 'join.relationship_unconfirmed', "O relacionamento {$route} ainda não foi confirmado.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id, 'target_unique' => $lookupUnique]);
+        }
+
+        if ($direction === 'reverse' && $relationship->status === Relationship::CONFIRMED && ! $lookupUnique) {
+            $this->issue('warning', 'join.reverse_multiplies', "Esta ligação percorre a relação {$route} no sentido inverso, a partir de {$probeInput['alias']}: cada linha de {$probeInput['alias']} pode encontrar várias em {$lookupInput['alias']}, e as linhas se multiplicam. Somas e contagens de linhas incluem essas cópias.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
         }
 
         if ($relationship->status === Relationship::REJECTED) {
@@ -393,12 +407,17 @@ final class RecipeCompiler
         }
 
         if ($relationship->status === Relationship::CONFIRMED) {
-            $standing = RelationshipStanding::of($relationship);
-            if ($standing['key'] === RelationshipStanding::REVIEW) {
-                $this->issue('blocker', 'join.relationship_needs_review', $standing['reason'], $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
-            }
-            if ($standing['key'] === RelationshipStanding::CAVEAT) {
-                $this->issue('warning', 'join.multiplicity_accepted', "A relação {$relationship->fromDataset->key}.{$relationship->from_column} → {$relationship->toDataset->key}.{$relationship->to_column} aceita multiplicidade: uma linha pode gerar várias na junção. Cada linha multiplicada fica registrada nos diagnósticos da execução.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
+            [$fromInput, $toInput] = $direction === 'forward' ? [$probeInput, $lookupInput] : [$lookupInput, $probeInput];
+            $target = "{$relationship->toDataset->key}.{$relationship->to_column}";
+
+            if ($relationship->policy === Relationship::ACCEPT_MULTIPLICITY) {
+                if ($relationship->from_version_id !== $fromInput['version_id'] || $relationship->to_version_id !== $toInput['version_id']) {
+                    $this->issue('blocker', 'join.relationship_needs_review', "A multiplicidade de {$route} foi aceita sobre outras versões dos dados, não sobre {$fromInput['alias']} versão {$fromInput['version_number']} e {$toInput['alias']} versão {$toInput['version_number']}. Revise a evidência destas versões e decida de novo.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
+                } else {
+                    $this->issue('warning', 'join.multiplicity_accepted', "A relação {$route} aceita multiplicidade: uma linha pode gerar várias na junção. Cada linha multiplicada fica registrada nos diagnósticos da execução.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
+                }
+            } elseif (! ($this->uniqueColumns[$toInput['position']][$relationship->to_column] ?? false)) {
+                $this->issue('blocker', 'join.relationship_needs_review', "Confirmada como N:1, mas {$target} tem valores repetidos em {$toInput['alias']} versão {$toInput['version_number']}. Aceite a multiplicidade, corrija as colunas ou rejeite.", $position, "{$path}.relationship_id", ['relationship_id' => $relationship->id]);
             }
         }
 
@@ -407,7 +426,7 @@ final class RecipeCompiler
             'relationship_id' => $relationship->id,
             'relationship_status' => $relationship->status,
             'relationship_policy' => $relationship->policy,
-            'direction' => $fromIn !== null ? 'forward' : 'reverse',
+            'direction' => $direction,
             'join_type' => $joinType,
             'probe' => ['alias' => $probeInput['alias'], 'column' => $probeColumn, 'input' => $probeInput['position']],
             'lookup' => ['alias' => $lookupInput['alias'], 'column' => $lookupColumn, 'input' => $lookupInput['position']],
@@ -479,7 +498,9 @@ final class RecipeCompiler
                 continue;
             }
 
-            if ($ref['type'] !== 'number') {
+            if (isset($this->textNumbers[$ref['input']][$ref['column']])) {
+                $this->issue('blocker', 'aggregate.decimal_ambiguous', "{$ref['alias']}.{$ref['column']} não pode ser somada: ".$this->textNumbers[$ref['input']][$ref['column']], $position, $measurePath);
+            } elseif ($ref['type'] !== 'number') {
                 $this->issue('warning', 'aggregate.column_not_numeric', "{$ref['alias']}.{$ref['column']} não é inteiramente numérica: valores vazios ou não numéricos serão ignorados na soma e registrados como diagnóstico.", $position, $measurePath);
             }
 
@@ -523,6 +544,8 @@ final class RecipeCompiler
         }
         $position = count($this->inputs);
         $this->versions[$position] = $version->columns->pluck('inferred_type', 'key')->all();
+        $this->uniqueColumns[$position] = $version->columns->mapWithKeys(fn ($column) => [$column->key => ($column->profile['unique'] ?? false) === true])->all();
+        $this->textNumbers[$position] = $version->columns->filter(fn ($column) => ($column->profile['decimal_ambiguous'] ?? false) === true)->mapWithKeys(fn ($column) => [$column->key => (string) $column->profile['type_reason']])->all();
         $this->datasets[$position] = $dataset;
 
         $input = [

@@ -1,11 +1,15 @@
 <?php
 
 use App\Modules\Support\DomainError;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+
+ini_set('zend.exception_ignore_args', '1');
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -39,5 +43,17 @@ return Application::configure(basePath: dirname(__DIR__))
             };
 
             return response()->json(['message' => $message, 'code' => $code, 'details' => new stdClass], $status, $e->getHeaders());
+        });
+
+        $exceptions->render(function (Throwable $e, Request $request) {
+            if (! $request->is('api/*') || $e instanceof ValidationException || $e instanceof AuthenticationException) {
+                return null;
+            }
+
+            return response()->json([
+                'message' => 'O servidor não conseguiu concluir esta operação. Tente de novo; se continuar, o detalhe técnico fica no registro do servidor, sem os valores das linhas.',
+                'code' => 'server_error',
+                'details' => new stdClass,
+            ], 500);
         });
     })->create();

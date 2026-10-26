@@ -86,7 +86,7 @@ final class QuestionTranslator
         }
 
         if ($function === 'sum' && $type === 'date') {
-            $this->error('question.measure_not_numeric', "{$base->key}.{$column} contém datas: só valores numéricos podem ser somados.", 'question.measure.column');
+            $this->error('question.measure_not_numeric', "{$base->key}.{$column} foi lida como data: só valores numéricos podem ser somados.", 'question.measure.column');
 
             return null;
         }
